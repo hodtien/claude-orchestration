@@ -106,6 +106,41 @@ User: "Explain the leader election in cache/leader.go"
   → Gemini: Direct delegation, return analysis
 ```
 
+### Pattern 5: Async Dispatch (token-efficient, recommended)
+
+```
+User: "Optimize the PostGIS provider queries"
+
+Claude orchestrates (minimal token usage):
+  Step 1 → Claude: Write task specs to .orchestration/tasks/postgis-opt/
+           - task-01.md (gemini: SQL analysis)
+           - task-02.md (copilot: Go code review)
+           - task-03.md (copilot: implementation, depends_on: [task-01, task-02])
+           Claude STOPS here. No waiting, no polling.
+
+  Step 2 → User runs: task-dispatch.sh .orchestration/tasks/postgis-opt/ --parallel
+           Agents work independently (0 Claude tokens consumed).
+           Results → .orchestration/results/<task-id>.out
+           Inbox notification → .orchestration/inbox/postgis-opt.done.md
+
+  Step 3 → User tells Claude: "Review batch postgis-opt results"
+           Claude reads results + synthesises. Minimal token spend.
+```
+
+**Why this pattern?** Claude's most expensive operations are waiting for subagents
+(context stays loaded) and crafting inline prompts. This pattern:
+- Writes specs once (structured, reusable)
+- Agents run without Claude active (0 token burn)
+- Dependency chains handled by dispatch script
+- Context piping between tasks is automatic
+- Claude only pays tokens for plan + final review
+
+**Commands:**
+- `task-dispatch.sh <batch-dir> [--parallel]` — dispatch all tasks
+- `task-status.sh <batch-id>` — check batch progress
+- `task-status.sh` — check inbox for completed batches
+- `task-status.sh --clean-inbox` — clear reviewed notifications
+
 ---
 
 ## Orchestration Protocol

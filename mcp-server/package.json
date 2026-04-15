@@ -1,0 +1,10 @@
+{
+  "name": "orch-notify-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for orchestration inbox notifications and batch status",
+  "type": "module",
+  "main": "server.mjs",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0"
+  }
+}
