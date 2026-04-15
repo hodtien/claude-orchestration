@@ -7,6 +7,9 @@ id: example-task-001
 agent: gemini           # copilot | gemini | beeknoee
 timeout: 180            # seconds
 retries: 1              # max retry attempts
+priority: normal        # high | normal | low — high runs first
+deadline: ""            # ISO 8601 (e.g. 2026-04-15T14:00Z) — warns if overdue
+context_cache: []       # cached context: project-overview, file-tree, architecture, tech-stack
 context_from: []        # list of task IDs whose .out to inject as context
 depends_on: []          # task IDs that must complete before this one starts
 output_format: markdown # markdown | code | json (hint for agent)

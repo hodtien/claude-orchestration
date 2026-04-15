@@ -104,6 +104,41 @@ for e in completions:
 # Unique tasks
 all_task_ids = set(e.get("task_id", "") for e in events if e.get("task_id"))
 
+# Parallelization detection
+# Tasks that started within 5s of each other are considered parallel
+starts = sorted(
+    [(e["ts"], e.get("task_id", ""), e.get("agent", "")) for e in events if e.get("event") == "start"],
+    key=lambda x: x[0]
+)
+parallel_groups = 0
+parallel_tasks = 0
+sequential_tasks = 0
+i = 0
+while i < len(starts):
+    group = [starts[i]]
+    j = i + 1
+    # Group starts within 5 seconds
+    while j < len(starts):
+        try:
+            t1 = datetime.strptime(starts[i][0], "%Y-%m-%dT%H:%M:%SZ")
+            t2 = datetime.strptime(starts[j][0], "%Y-%m-%dT%H:%M:%SZ")
+            if abs((t2 - t1).total_seconds()) <= 5:
+                group.append(starts[j])
+                j += 1
+            else:
+                break
+        except ValueError:
+            break
+    if len(group) > 1:
+        parallel_groups += 1
+        parallel_tasks += len(group)
+    else:
+        sequential_tasks += 1
+    i = j if j > i + 1 else i + 1
+
+total_dispatches = parallel_tasks + sequential_tasks
+parallelization_rate = (parallel_tasks / total_dispatches * 100) if total_dispatches > 0 else 0
+
 # Duration stats
 durations = [e.get("duration_s", 0) for e in successes if e.get("duration_s", 0) > 0]
 avg_duration = sum(durations) / len(durations) if durations else 0
@@ -145,6 +180,10 @@ if output_json:
             "successes": len(successes),
             "failures": len(failures),
             "retries": len(retries),
+            "parallelization_rate_pct": round(parallelization_rate, 1),
+            "parallel_groups": parallel_groups,
+            "parallel_tasks": parallel_tasks,
+            "sequential_tasks": sequential_tasks,
             "success_rate_pct": round(success_rate, 1),
         },
         "duration": {
@@ -193,6 +232,16 @@ else:
     print(f"  Success Rate:  [{bar}] {success_rate:.0f}%")
     print(f"  Tasks:         {len(all_task_ids)} unique")
     print(f"  Completions:   {len(successes)} ok / {len(failures)} fail / {len(retries)} retries")
+    print()
+
+    # Parallelization
+    print("── Parallelization ──────────────────────────────────")
+    p_bar_len = 30
+    p_bar_fill = int(parallelization_rate / 100 * p_bar_len) if total_dispatches > 0 else 0
+    p_bar = "█" * p_bar_fill + "░" * (p_bar_len - p_bar_fill)
+    print(f"  Rate:     [{p_bar}] {parallelization_rate:.0f}%")
+    print(f"  Parallel: {parallel_tasks} tasks in {parallel_groups} groups")
+    print(f"  Serial:   {sequential_tasks} tasks")
     print()
 
     # Duration

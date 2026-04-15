@@ -101,19 +101,43 @@ if [ "$MODE" = "--status" ]; then
   exit 0
 fi
 
-# ── collect tasks ─────────────────────────────────────────────────────────────
-declare -a TASK_FILES=()
+# ── collect and sort tasks by priority ─────────────────────────────────────────
+declare -a TASK_FILES_HIGH=()
+declare -a TASK_FILES_NORMAL=()
+declare -a TASK_FILES_LOW=()
+
 for spec in "$BATCH_DIR"/task-*.md; do
   [ -f "$spec" ] || continue
-  TASK_FILES+=("$spec")
+  prio=$(parse_front "$spec" "priority" "normal")
+  case "$prio" in
+    high)   TASK_FILES_HIGH+=("$spec") ;;
+    low)    TASK_FILES_LOW+=("$spec") ;;
+    *)      TASK_FILES_NORMAL+=("$spec") ;;
+  esac
 done
+
+# Merge: high first, then normal, then low
+declare -a TASK_FILES=("${TASK_FILES_HIGH[@]}" "${TASK_FILES_NORMAL[@]}" "${TASK_FILES_LOW[@]}")
 
 if [ ${#TASK_FILES[@]} -eq 0 ]; then
   echo "[dispatch] no task-*.md files found in $BATCH_DIR" >&2
   exit 1
 fi
 
-echo "[dispatch] batch=$BATCH_ID tasks=${#TASK_FILES[@]} mode=$MODE"
+# ── deadline check ────────────────────────────────────────────────────────────
+for spec in "${TASK_FILES[@]}"; do
+  dl=$(parse_front "$spec" "deadline" "")
+  if [ -n "$dl" ]; then
+    dl_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$dl" +%s 2>/dev/null || date -d "$dl" +%s 2>/dev/null || echo "0")
+    now_epoch=$(date +%s)
+    if [ "$dl_epoch" -gt 0 ] && [ "$now_epoch" -gt "$dl_epoch" ]; then
+      tid=$(parse_front "$spec" "id" "?")
+      echo "[dispatch] ⚠️  OVERDUE: $tid deadline was $dl"
+    fi
+  fi
+done
+
+echo "[dispatch] batch=$BATCH_ID tasks=${#TASK_FILES[@]} mode=$MODE priority_order=[${#TASK_FILES_HIGH[@]}H/${#TASK_FILES_NORMAL[@]}N/${#TASK_FILES_LOW[@]}L]"
 
 # ── dependency resolver ───────────────────────────────────────────────────────
 # Returns 0 if all dependencies are satisfied (result files exist and non-empty)
@@ -128,6 +152,60 @@ deps_satisfied() {
     fi
   done
   return 0
+}
+
+# ── structured completion report ───────────────────────────────────────────────
+# Generates a JSON report from task spec + output metadata
+generate_report() {
+  local spec="$1" tid="$2" status="$3" out_size="$4"
+  local agent priority deadline output_format
+  agent=$(parse_front "$spec" "agent" "unknown")
+  priority=$(parse_front "$spec" "priority" "normal")
+  deadline=$(parse_front "$spec" "deadline" "")
+  output_format=$(parse_front "$spec" "output_format" "markdown")
+
+  local duration_s=0
+  if [ -f "$RESULTS_DIR/${tid}.log" ]; then
+    # Extract duration from agent.sh log: "done (attempt N)" indicates success
+    local start_ts end_ts
+    start_ts=$(head -1 "$RESULTS_DIR/${tid}.log" 2>/dev/null | grep -o '[0-9]\+s' | head -1 | tr -d 's' || echo "0")
+  fi
+
+  # Count output lines and extract first heading as summary
+  local summary="" out_lines=0
+  if [ -f "$RESULTS_DIR/${tid}.out" ] && [ -s "$RESULTS_DIR/${tid}.out" ]; then
+    out_lines=$(wc -l < "$RESULTS_DIR/${tid}.out" | tr -d ' ')
+    summary=$(grep -m1 '^#\|^[A-Z]' "$RESULTS_DIR/${tid}.out" | head -c 200 || echo "")
+  fi
+
+  # Check for revisions
+  local rev_count=0
+  for rf in "$RESULTS_DIR/${tid}".v*.out; do
+    [ -f "$rf" ] && rev_count=$((rev_count + 1))
+  done
+
+  python3 - "$tid" "$agent" "$status" "$out_size" "$out_lines" "$priority" "$deadline" "$output_format" "$summary" "$rev_count" <<'PYEOF' > "$RESULTS_DIR/${tid}.report.json"
+import sys, json, datetime
+_, tid, agent, status, out_size, out_lines, priority, deadline, output_format, summary, rev_count = sys.argv
+print(json.dumps({
+    "type": "task_completion_report",
+    "task_id": tid,
+    "agent": agent,
+    "status": status,
+    "timestamp": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "priority": priority,
+    "deadline": deadline or None,
+    "output_format": output_format,
+    "deliverables": {
+        "output_file": f"results/{tid}.out",
+        "output_bytes": int(out_size),
+        "output_lines": int(out_lines),
+        "summary": summary,
+    },
+    "revisions": int(rev_count),
+    "next_suggested_tasks": [],
+}, indent=2))
+PYEOF
 }
 
 # ── dispatch one task ─────────────────────────────────────────────────────────
@@ -155,6 +233,30 @@ dispatch_task() {
   # Build prompt from body
   prompt=$(parse_body "$spec")
 
+  # Inject cached context (project-overview, file-tree, architecture, tech-stack)
+  local cache_keys
+  cache_keys=$(parse_list "$spec" "context_cache")
+  if [ -n "$cache_keys" ]; then
+    local cache_dir="$PROJECT_ROOT/.orchestration/context-cache"
+    local cache_block=""
+    for ck in $cache_keys; do
+      [ -z "$ck" ] && continue
+      local cache_file="$cache_dir/${ck}.md"
+      if [ -f "$cache_file" ]; then
+        cache_block="${cache_block}$(cat "$cache_file")
+"
+      else
+        echo "[dispatch] ⚠️  cache miss: $ck (run: context-cache.sh generate $ck)" >&2
+      fi
+    done
+    if [ -n "$cache_block" ]; then
+      prompt="${cache_block}
+---
+
+${prompt}"
+    fi
+  fi
+
   # Inject context from prior tasks
   local ctx_tasks
   ctx_tasks=$(parse_list "$spec" "context_from")
@@ -181,10 +283,16 @@ $(cat "$ctx_file")
   # Dispatch via agent.sh, capture output to result file
   if "$SCRIPT_DIR/agent.sh" "$agent" "$tid" "$prompt" "$timeout" "$retries" \
       > "$RESULTS_DIR/${tid}.out" 2> "$RESULTS_DIR/${tid}.log"; then
-    echo "[dispatch] ✅ $tid complete ($(wc -c < "$RESULTS_DIR/${tid}.out" | tr -d ' ') bytes)"
+    local out_size
+    out_size=$(wc -c < "$RESULTS_DIR/${tid}.out" | tr -d ' ')
+    echo "[dispatch] ✅ $tid complete (${out_size} bytes)"
+
+    # Generate structured completion report
+    generate_report "$spec" "$tid" "success" "$out_size"
     return 0
   else
     echo "[dispatch] ❌ $tid failed"
+    generate_report "$spec" "$tid" "failed" "0"
     return 1
   fi
 }

@@ -108,8 +108,13 @@ function checkBatchStatus(batchId) {
     // Parse frontmatter id and agent
     const idMatch = content.match(/^id:\s*(.+?)(\s*#.*)?$/m);
     const agentMatch = content.match(/^agent:\s*(.+?)(\s*#.*)?$/m);
+    const prioMatch = content.match(/^priority:\s*(.+?)(\s*#.*)?$/m);
+    const dlMatch = content.match(/^deadline:\s*"?(.+?)"?(\s*#.*)?$/m);
     const tid = idMatch ? idMatch[1].trim() : f.replace(".md", "");
     const agent = agentMatch ? agentMatch[1].trim() : "unknown";
+    const priority = prioMatch ? prioMatch[1].trim() : "normal";
+    const deadline = dlMatch ? dlMatch[1].trim() : "";
+    const overdue = deadline && new Date(deadline) < new Date();
 
     const outPath = join(resultsDir, `${tid}.out`);
     const hasResult = existsSync(outPath);
@@ -123,12 +128,24 @@ function checkBatchStatus(batchId) {
       .filter((r) => r.startsWith(`${tid}.v`) && r.endsWith(".out"))
       .sort();
 
+    // Read structured report if available
+    const reportPath = join(resultsDir, `${tid}.report.json`);
+    let report = null;
+    const reportContent = safeRead(reportPath);
+    if (reportContent) {
+      try { report = JSON.parse(reportContent); } catch {}
+    }
+
     return {
       id: tid,
       agent,
+      priority,
+      deadline: deadline || null,
+      overdue,
       status: hasResult && resultSize > 50 ? "done" : hasResult ? "failed" : "pending",
       result_bytes: resultSize,
       revisions: revisions.map((r) => r.replace(".out", "")),
+      report,
     };
   });
 
