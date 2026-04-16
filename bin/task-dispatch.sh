@@ -116,8 +116,12 @@ for spec in "$BATCH_DIR"/task-*.md; do
   esac
 done
 
-# Merge: high first, then normal, then low
-declare -a TASK_FILES=("${TASK_FILES_HIGH[@]}" "${TASK_FILES_NORMAL[@]}" "${TASK_FILES_LOW[@]}")
+# Merge: high first, then normal, then low (safe empty-array expansion for set -u)
+declare -a TASK_FILES=(
+  ${TASK_FILES_HIGH[@]+"${TASK_FILES_HIGH[@]}"}
+  ${TASK_FILES_NORMAL[@]+"${TASK_FILES_NORMAL[@]}"}
+  ${TASK_FILES_LOW[@]+"${TASK_FILES_LOW[@]}"}
+)
 
 if [ ${#TASK_FILES[@]} -eq 0 ]; then
   echo "[dispatch] no task-*.md files found in $BATCH_DIR" >&2

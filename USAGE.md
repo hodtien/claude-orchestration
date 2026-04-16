@@ -189,12 +189,29 @@ Most common issues:
 
 ```
 ~/claude-orchestration/
-  bin/            # all CLIs — in PATH
-  templates/      # task-spec.example.md — copy-paste starter
-  mcp-server/     # orch-notify Node MCP server
-  README.md       # setup + command reference
-  TASK_ROUTING.md # routing rules Claude follows
-  USAGE.md        # this file — user-facing workflows
+  bin/                    # all CLIs — in PATH
+    sprint-planning.sh    # Agile sprint planning ceremony
+    daily-standup.sh      # Daily standup (shows stats + Claude prompts)
+    sprint-review.sh      # Sprint review ceremony
+    sprint-retrospective.sh # Sprint retrospective
+    agile-setup.sh        # Register all Agile MCP servers
+    task-dispatch.sh      # Async batch dispatch
+    task-status.sh / task-revise.sh / orch-*.sh
+  templates/
+    agile-task-template.md      # Agile task spec (with sprint_id, assigned_to)
+    completion-report-template.md # Standard completion report format
+    task-spec.example.md         # Async batch task spec example
+  memory-bank/            # Persistent Memory Bank system
+    memory-bank-core.js   # Storage engine (tasks, sprints, agents, knowledge)
+    memory-bank-mcp.mjs   # MCP server — 18 tools for Claude to use
+  mcp-server/             # MCP servers
+    server.mjs            # orch-notify (inbox, batch status, metrics)
+    gemini-ba-agent.mjs   # Business Analyst
+    gemini-architect.mjs  # Technical Architect
+    gemini-security.mjs   # Security Lead
+    copilot-qa-agent.mjs  # QA Engineer
+    copilot-devops.mjs    # DevOps Engineer
+  README.md / TASK_ROUTING.md / USAGE.md
 
 <your-project>/.orchestration/
   tasks/<batch-id>/task-*.md   # specs you/Claude write
@@ -202,6 +219,72 @@ Most common issues:
   results/<task-id>.report.json # structured completion report
   results/<task-id>.v2.out      # revisions
   inbox/<batch-id>.done.md     # completion notification
+  sprints/                     # sprint specs & retro notes
   context-cache/*.md           # reusable context
   tasks.jsonl                  # audit log (gitignored)
+
+~/.memory-bank-storage/        # Memory Bank persistent storage
+  tasks/                       # task JSON files
+  sprints/                     # sprint JSON files
+  agents/                      # agent state JSON files
+  knowledge/                   # knowledge base (markdown)
+  archives/                    # completed sprint archives
 ```
+
+---
+
+## 9. Agile workflow (MCP agent mode)
+
+For structured Agile development with specialized agents. Use this when you want roles
+(BA, Architect, Security, QA, DevOps) instead of raw Gemini/Copilot dispatch.
+
+### Setup (once)
+
+```bash
+agile-setup.sh
+```
+
+Registers: `memory-bank`, `gemini-ba-agent`, `gemini-architect`, `gemini-security`, `copilot-qa-agent`, `copilot-devops`.
+
+### Sprint lifecycle
+
+```bash
+# 1. Start sprint
+sprint-planning.sh --goal "Build user authentication"
+# → Prints Claude prompts to create sprint + backlog analysis
+
+# 2. Daily check-in
+daily-standup.sh
+# → Shows stats + prints Claude prompt for full standup via memory-bank
+
+# 3. Work with agents in Claude
+"gemini-ba-agent analyze_requirements: user login with SSO support"
+"gemini-architect design_architecture: from BA analysis above"
+"gemini-security threat_model: the auth design"
+"copilot-qa-agent write_integration_tests: for auth module"
+"copilot-devops setup_ci_cd: GitHub Actions for Node.js app"
+
+# 4. End of sprint
+sprint-review.sh sprint-20260415
+sprint-retrospective.sh sprint-20260415
+```
+
+### Memory Bank quick reference
+
+```
+Memory bank: create sprint with name='X', goal='Y'
+Memory bank: store task TASK-DEV-001 { title, assigned_to, status, sprint_id }
+Memory bank: get sprint report for sprint-20260415
+Memory bank: list tasks where agent=copilot-dev, status=in_progress
+Memory bank: search knowledge "authentication"
+Memory bank: store knowledge category=decisions, key=auth-choice, content="..."
+```
+
+### Routing decision: MCP agents vs async batch
+
+| Use MCP agents when | Use task-dispatch.sh when |
+|---|---|
+| Interactive feature work | Running ≥3 independent tasks offline |
+| Need specialized tools (threat model, API design) | Large codebase analysis |
+| Sprint ceremony support | Parallel batch processing |
+| Real-time agent collaboration | Background work while you do other things |

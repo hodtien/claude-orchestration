@@ -5,7 +5,50 @@ Claude reads this file to decide which agent handles what.
 
 ---
 
-## Agent Capabilities
+## Agile Agent Roles (MCP Servers)
+
+These are specialized MCP servers registered via `agile-setup.sh`. Use them for structured Agile workflows.
+
+| MCP Server | Role | Primary Tools |
+|---|---|---|
+| `memory-bank` | Context & Sprint Management | store_task, get_sprint_report, store_knowledge, list_tasks |
+| `gemini-ba-agent` | Business Analyst | analyze_requirements, create_user_stories, validate_business_logic |
+| `gemini-architect` | Technical Architect | design_architecture, review_architecture, design_api, create_adr |
+| `gemini-security` | Security Lead | security_audit, threat_model, compliance_check |
+| `beeknoee` | **Primary Dev** (free) | implement features, fix bugs, refactor, write code |
+| `copilot-dev-agent` | Code Reviewer | code_review → reports findings to Claude |
+| `copilot-qa-agent` | QA Engineer | write_integration_tests, write_e2e_tests, analyze_coverage |
+| `copilot-devops` | DevOps Engineer | setup_ci_cd, write_dockerfile, write_infrastructure, setup_monitoring |
+
+### Agile Feature Flow (use MCP agents)
+
+```
+User Request → Claude (PM/Scrum Master)
+  1. gemini-ba-agent: analyze_requirements
+  2. gemini-architect: design_architecture
+  3. gemini-security: threat_model (parallel with step 2)
+  4. beeknoee: implement  [PRIMARY dev, free]
+  5. copilot-dev-agent: code_review → report findings to Claude
+  6. copilot-qa-agent: write_integration_tests
+  7. gemini-security: security_audit
+  8. copilot-devops: setup_ci_cd / configure_deployment
+```
+
+### When to use Agile MCP agents vs raw CLI dispatch
+
+| Scenario | Use |
+|---|---|
+| Requirements gathering, user stories | `gemini-ba-agent` MCP |
+| System design, API design, ADRs | `gemini-architect` MCP |
+| Security audit before deployment | `gemini-security` MCP |
+| Writing tests for a specific module | `copilot-qa-agent` MCP |
+| CI/CD config, Dockerfile, IaC | `copilot-devops` MCP |
+| Multi-task batch (≥3 independent tasks) | `task-dispatch.sh` with raw agents |
+| Large codebase analysis | `task-dispatch.sh --parallel` with gemini |
+
+---
+
+## CLI Agent Capabilities
 
 ### Gemini CLI — Research & Analysis
 - Long-context analysis (1M tokens — can read entire codebases)
@@ -25,10 +68,11 @@ Claude reads this file to decide which agent handles what.
 - GitHub integration (understands repo context)
 - Multi-file edits
 
-### Beeknoee — General Purpose (Claude via API)
-- Fallback when Gemini/Copilot are rate-limited
+### Beeknoee — Primary Dev Agent (Claude API, free)
+- **Primary** for all code implementation, bug fixes, refactoring
+- Feature development from spec/design artifacts
 - Tasks requiring Claude-specific reasoning
-- Quick Q&A that doesn't need code or deep analysis
+- Quick Q&A and general questions
 
 ---
 
@@ -36,37 +80,38 @@ Claude reads this file to decide which agent handles what.
 
 Claude uses this table to decide which agent gets each task type.
 
-| Task Type | Primary | Fallback | Rationale |
+| Task Type | Primary | Reviewer / Fallback | Rationale |
 |---|---|---|---|
 | **Architecture analysis** | Gemini | Claude | Gemini's 1M context reads entire codebase |
 | **Security audit** | Gemini | Claude | Full code review needs long context |
-| **Code implementation** | Copilot | Claude | Native code generation |
-| **Bug fix** | Copilot | Claude | Debugging + test generation |
-| **Code review** | Copilot | Gemini | Copilot gives inline suggestions |
-| **Write tests** | Copilot | Claude | Code generation strength |
+| **Code implementation** | **Beeknoee** | Claude | Free; Claude-quality reasoning |
+| **Bug fix** | **Beeknoee** | Claude | Free; strong debugging |
+| **Refactoring code** | **Beeknoee** | Claude | Free; execute design plan |
+| **Code review** | Copilot → reports to Claude | Gemini | Copilot reviews beeknoee output |
+| **Write tests** | Copilot-qa-agent | Beeknoee | Code generation + coverage |
 | **Test strategy/plan** | Gemini | Claude | Analysis + planning strength |
 | **Performance analysis** | Gemini | Copilot | Read + analyse before optimise |
-| **Performance fix** | Copilot | Claude | Code changes needed |
+| **Performance fix** | **Beeknoee** | Claude | Free; code changes needed |
 | **Documentation** | Gemini | Claude | Long context summarisation |
 | **Refactoring plan** | Gemini | Claude | Analyse first |
-| **Refactoring code** | Copilot | Claude | Execute the plan |
-| **Explain code** | Gemini | Copilot | Both can do this |
-| **Quick question** | Beeknoee | Claude | Cheapest + fastest |
+| **Explain code** | Gemini | Beeknoee | Both can do this |
+| **Quick question** | Beeknoee | Claude | Free + fastest |
 
 ---
 
 ## Workflow Patterns
 
-### Pattern 1: Analyse → Implement (most common)
+### Pattern 1: Analyse → Implement → Review (most common)
 
 ```
 User: "Optimise the SQL queries in provider/"
 
 Claude orchestrates:
-  Step 1 → Gemini: "Analyse provider/ SQL patterns, find N+1 queries and bottlenecks"
-  Step 2 → Claude: Review Gemini's findings, create implementation plan
-  Step 3 → Copilot: "Implement these optimisations: [plan from step 2]"
-  Step 4 → Claude: Review Copilot's code, run tests, approve
+  Step 1 → Gemini:   "Analyse provider/ SQL patterns, find N+1 queries and bottlenecks"
+  Step 2 → Claude:   Review Gemini's findings, create implementation plan
+  Step 3 → Beeknoee: "Implement these optimisations: [plan from step 2]"  ← PRIMARY dev (free)
+  Step 4 → Copilot:  "Review the implementation, report findings to Claude"
+  Step 5 → Claude:   Review Copilot's report, approve or request revision
 ```
 
 ### Pattern 2: Parallel Review (speed-critical)
@@ -88,12 +133,12 @@ Claude orchestrates:
 User: "Design and implement a new caching strategy"
 
 Claude orchestrates:
-  Step 1 → Gemini: "Analyse current cache/zoom_config.go, propose new TTL strategy"
+  Step 1 → Gemini:   "Analyse current cache/zoom_config.go, propose new TTL strategy"
            Output saved to .orchestration/results/task-001.out
-  Step 2 → Copilot: [receives Gemini's output as context]
-           "Implement the proposed TTL strategy with tests"
-  Step 3 → Gemini: "Review Copilot's implementation against the original design"
-  Step 4 → Claude: Final review + approve
+  Step 2 → Beeknoee: [receives Gemini's output as context]
+           "Implement the proposed TTL strategy with tests"  ← free
+  Step 3 → Copilot:  "Review Beeknoee's implementation against the original design, report to Claude"
+  Step 4 → Claude:   Final review + approve
 ```
 
 ### Pattern 4: Single Agent (simple tasks)

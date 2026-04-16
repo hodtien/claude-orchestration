@@ -1,0 +1,46 @@
+{
+  "name": "claude-agile-multiagent-system",
+  "version": "1.0.0",
+  "description": "Transform Claude into a complete Agile development team with specialized AI agents",
+  "type": "module",
+  "main": "memory-bank/memory-bank-core.js",
+  "scripts": {
+    "setup": "bash setup-agile-system.sh",
+    "test:memory-bank": "node memory-bank/memory-bank-core.js",
+    "sprint:plan": "bash workflows/sprint-planning.sh",
+    "sprint:standup": "bash workflows/daily-standup.sh",
+    "sprint:review": "bash workflows/sprint-review.sh",
+    "sprint:retro": "bash workflows/sprint-retrospective.sh",
+    "start:ba-agent": "node agent-configs/mcp-servers/gemini-ba-agent.js",
+    "start:memory-bank": "node memory-bank/memory-bank-mcp.js"
+  },
+  "keywords": [
+    "claude",
+    "ai-agents",
+    "multi-agent",
+    "agile",
+    "scrum",
+    "mcp",
+    "model-context-protocol",
+    "development-team",
+    "automation"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=9.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/claude-agile-multiagent-system.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/claude-agile-multiagent-system/issues"
+  },
+  "homepage": "https://github.com/yourusername/claude-agile-multiagent-system#readme"
+}
