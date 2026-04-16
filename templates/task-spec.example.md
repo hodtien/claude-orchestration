@@ -5,6 +5,7 @@
 
 id: example-task-001
 agent: gemini           # copilot | gemini | beeknoee
+reviewer: ""            # copilot — runs after agent, applies+reviews output, writes .review.out
 timeout: 180            # seconds
 retries: 1              # max retry attempts
 priority: normal        # high | normal | low — high runs first

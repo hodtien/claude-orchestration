@@ -212,6 +212,57 @@ print(json.dumps({
 PYEOF
 }
 
+# ── reviewer pipeline ────────────────────────────────────────────────────────
+# After main agent completes, run reviewer (e.g. copilot) to apply + review output.
+# Writes to: results/<tid>.review.out
+run_reviewer() {
+  local spec="$1" tid="$2"
+  local reviewer
+  reviewer=$(parse_front "$spec" "reviewer" "")
+  [ -z "$reviewer" ] && return 0
+
+  local main_out="$RESULTS_DIR/${tid}.out"
+  if [ ! -f "$main_out" ] || [ ! -s "$main_out" ]; then
+    echo "[dispatch] skip reviewer for $tid — no output to review"
+    return 0
+  fi
+
+  local timeout
+  timeout=$(parse_front "$spec" "timeout" "120")
+  local original_task
+  original_task=$(parse_body "$spec")
+
+  # Build review+apply prompt for copilot
+  local review_prompt
+  review_prompt="You are a senior code reviewer applying and reviewing AI-generated code.
+
+ORIGINAL TASK:
+${original_task}
+
+GENERATED IMPLEMENTATION (from beeknoee):
+$(cat "$main_out")
+
+Your job:
+1. Apply ALL code changes shown above to the relevant files in this project directory.
+   Use --allow-all. Write the files exactly as specified.
+2. If the implementation references a file path — write to that path.
+   If no path is specified — infer the correct file from context.
+3. After applying, review for: correctness, edge cases, code style, security.
+4. Report back: which files were changed, what was applied, any issues or improvements made.
+
+Apply the changes now."
+
+  echo "[dispatch] running reviewer $reviewer for $tid"
+  if "$SCRIPT_DIR/agent.sh" "$reviewer" "${tid}-review" "$review_prompt" "$timeout" "1" \
+      > "$RESULTS_DIR/${tid}.review.out" 2>> "$RESULTS_DIR/${tid}.log"; then
+    local review_size
+    review_size=$(wc -c < "$RESULTS_DIR/${tid}.review.out" | tr -d ' ')
+    echo "[dispatch] ✅ review+apply complete for $tid (${review_size} bytes)"
+  else
+    echo "[dispatch] ⚠️  reviewer failed for $tid — check ${tid}.log"
+  fi
+}
+
 # ── dispatch one task ─────────────────────────────────────────────────────────
 dispatch_task() {
   local spec="$1"
@@ -290,6 +341,9 @@ $(cat "$ctx_file")
     local out_size
     out_size=$(wc -c < "$RESULTS_DIR/${tid}.out" | tr -d ' ')
     echo "[dispatch] ✅ $tid complete (${out_size} bytes)"
+
+    # Run reviewer pipeline (e.g. copilot applies + reviews beeknoee output)
+    run_reviewer "$spec" "$tid"
 
     # Generate structured completion report
     generate_report "$spec" "$tid" "success" "$out_size"
@@ -402,9 +456,18 @@ duration=$(( $(date +%s) - start_time ))
   for spec in "${TASK_FILES[@]}"; do
     tid=$(parse_front "$spec" "id" "unknown")
     agent=$(parse_front "$spec" "agent" "?")
+    reviewer=$(parse_front "$spec" "reviewer" "")
     if [ -f "$RESULTS_DIR/${tid}.out" ] && [ -s "$RESULTS_DIR/${tid}.out" ]; then
       size=$(wc -c < "$RESULTS_DIR/${tid}.out" | tr -d ' ')
       echo "- ✅ **$tid** ($agent) — ${size} bytes → \`results/${tid}.out\`"
+      if [ -n "$reviewer" ]; then
+        if [ -f "$RESULTS_DIR/${tid}.review.out" ] && [ -s "$RESULTS_DIR/${tid}.review.out" ]; then
+          rsize=$(wc -c < "$RESULTS_DIR/${tid}.review.out" | tr -d ' ')
+          echo "  - 🔍 reviewed+applied by **$reviewer** — ${rsize} bytes → \`results/${tid}.review.out\`"
+        else
+          echo "  - ⚠️  reviewer ($reviewer) failed or no output"
+        fi
+      fi
     else
       echo "- ❌ **$tid** ($agent) — failed or empty"
     fi

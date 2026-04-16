@@ -53,12 +53,14 @@ When user asks to build a feature, chain agents based on what's needed:
 2. gemini-architect: design_architecture        ← if non-trivial design needed
    gemini-security: threat_model               ← run in parallel with above
 3. memory-bank: store_task for each task
-4. beeknoee: implement_feature                 ← PRIMARY dev (free)
-5. copilot-dev-agent: code_review              ← review beeknoee output, report to Claude
-6. copilot-qa-agent: write_integration_tests
-7. gemini-security: security_audit             ← before deploy
-8. copilot-devops: configure_deployment        ← if deploying
+4. beeknoee: implement_feature                 ← PRIMARY dev (free), generates code to .out
+   └─ reviewer: copilot                        ← auto-triggered: applies .out to files + reviews
+5. copilot-qa-agent: write_integration_tests
+6. gemini-security: security_audit             ← before deploy
+7. copilot-devops: configure_deployment        ← if deploying
 ```
+
+For async dispatch, set `reviewer: copilot` in task spec — copilot auto-applies beeknoee output after generation.
 
 Skip steps that don't apply.
 
