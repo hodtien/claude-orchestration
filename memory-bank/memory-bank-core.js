@@ -11,10 +11,29 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { homedir } from 'os';
+import { randomBytes } from 'crypto';
 
 const STORAGE_DIR = process.env.STORAGE_DIR
   ? process.env.STORAGE_DIR.replace('~', homedir())
   : path.join(homedir(), '.memory-bank-storage');
+
+/**
+ * Atomic write: write to a temp file in the same directory, then rename.
+ * Prevents partial reads if another process reads during write.
+ */
+async function atomicWriteFile(filePath, data) {
+  const dir = path.dirname(filePath);
+  const tmpFile = path.join(dir, `.tmp-${randomBytes(6).toString('hex')}`);
+  try {
+    await fs.writeFile(tmpFile, data);
+    // rename is atomic on the same filesystem
+    await fs.rename(tmpFile, filePath);
+  } catch (err) {
+    // Clean up temp file on failure
+    try { await fs.unlink(tmpFile); } catch {}
+    throw err;
+  }
+}
 
 class MemoryBank {
   constructor(storageDir = STORAGE_DIR) {
@@ -42,7 +61,7 @@ class MemoryBank {
         version: (existing?._meta?.version ?? 0) + 1,
       },
     };
-    await fs.writeFile(taskPath, JSON.stringify(record, null, 2));
+    await atomicWriteFile(taskPath, JSON.stringify(record, null, 2));
     return record;
   }
 
@@ -105,7 +124,7 @@ class MemoryBank {
       state,
       _meta: { last_activity: new Date().toISOString() },
     };
-    await fs.writeFile(
+    await atomicWriteFile(
       path.join(this.storageDir, 'agents', `${agentId}.json`),
       JSON.stringify(record, null, 2)
     );
@@ -152,7 +171,7 @@ class MemoryBank {
         updated_at: new Date().toISOString(),
       },
     };
-    await fs.writeFile(
+    await atomicWriteFile(
       path.join(this.storageDir, 'sprints', `${sprintId}.json`),
       JSON.stringify(sprint, null, 2)
     );
@@ -179,7 +198,7 @@ class MemoryBank {
       ...updates,
       _meta: { ...existing._meta, updated_at: new Date().toISOString() },
     };
-    await fs.writeFile(
+    await atomicWriteFile(
       path.join(this.storageDir, 'sprints', `${sprintId}.json`),
       JSON.stringify(updated, null, 2)
     );
@@ -225,8 +244,8 @@ class MemoryBank {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
-    await fs.writeFile(path.join(catDir, `${key}.md`), content);
-    await fs.writeFile(
+    await atomicWriteFile(path.join(catDir, `${key}.md`), content);
+    await atomicWriteFile(
       path.join(catDir, `${key}.meta.json`),
       JSON.stringify(meta, null, 2)
     );
@@ -385,7 +404,7 @@ class MemoryBank {
         updated_at: new Date().toISOString(),
       },
     };
-    await fs.writeFile(
+    await atomicWriteFile(
       path.join(backlogDir, `${itemId}.json`),
       JSON.stringify(item, null, 2)
     );
@@ -431,7 +450,7 @@ class MemoryBank {
       });
       // Mark backlog item as promoted
       const updated = { ...item, status: 'in_sprint', sprint_id: sprintId, _meta: { ...item._meta, updated_at: new Date().toISOString() } };
-      await fs.writeFile(itemPath, JSON.stringify(updated, null, 2));
+      await atomicWriteFile(itemPath, JSON.stringify(updated, null, 2));
       return { promoted: itemId, sprint_id: sprintId };
     } catch (err) {
       throw new Error(`Backlog item ${itemId} not found: ${err.message}`);
@@ -457,7 +476,7 @@ class MemoryBank {
       next_action: meta.next_action ?? '',
       _meta: { stored_at: new Date().toISOString() },
     };
-    await fs.writeFile(
+    await atomicWriteFile(
       path.join(taskDir, `${agentRole}.json`),
       JSON.stringify(record, null, 2)
     );
@@ -519,7 +538,7 @@ class MemoryBank {
       status: 'pending',
       _meta: { created_at: new Date().toISOString() },
     };
-    await fs.writeFile(
+    await atomicWriteFile(
       path.join(this.storageDir, 'tasks', `${revisionId}.json`),
       JSON.stringify(record, null, 2)
     );
@@ -533,11 +552,11 @@ class MemoryBank {
     const tasks = await this.getSprintTasks(sprintId);
     const archDir = path.join(this.storageDir, 'archives', sprintId);
     await fs.mkdir(archDir, { recursive: true });
-    await fs.writeFile(
+    await atomicWriteFile(
       path.join(archDir, 'sprint.json'),
       JSON.stringify(sprint, null, 2)
     );
-    await fs.writeFile(
+    await atomicWriteFile(
       path.join(archDir, 'tasks.json'),
       JSON.stringify(tasks, null, 2)
     );

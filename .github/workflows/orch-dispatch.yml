@@ -1,0 +1,72 @@
+name: Orchestration Dispatch
+
+on:
+  workflow_dispatch:
+    inputs:
+      batch_path:
+        description: Path to task batch directory (e.g. .orchestration/tasks/phase1)
+        required: true
+        type: string
+      parallel:
+        description: Run dispatch in parallel mode
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      CI: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install GitHub Copilot CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --global --no-audit --no-fund @github/copilot
+
+      - name: Install Gemini CLI (optional)
+        if: ${{ env.GEMINI_API_KEY != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --global --no-audit --no-fund @google/gemini-cli
+
+      - name: Health check
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash ./bin/orch-health-beacon.sh
+
+      - name: Dispatch batch
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash ./bin/task-dispatch.sh "${{ inputs.batch_path }}" ${{ inputs.parallel && '--parallel' || '' }}
+
+      - name: Upload orchestration results
+        uses: actions/upload-artifact@v4
+        with:
+          name: orchestration-results-${{ github.run_id }}
+          path: .orchestration/results/
+          if-no-files-found: warn
+
+      - name: Upload orchestration inbox
+        uses: actions/upload-artifact@v4
+        with:
+          name: orchestration-inbox-${{ github.run_id }}
+          path: .orchestration/inbox/
+          if-no-files-found: warn

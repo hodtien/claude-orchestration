@@ -3,23 +3,20 @@
 # Detects project root via git, writes audit log per-project.
 #
 # Usage:
-#   agent.sh <copilot|gemini|beeknoee> <task_id> <prompt> [timeout_secs=60] [max_retries=2]
+#   agent.sh <copilot|gemini> <task_id> <prompt> [timeout_secs=60] [max_retries=2]
 #
 # Log: <project>/.orchestration/tasks.jsonl
 #
 # Context pipe:
 #   CONTEXT_FILE=.orchestration/results/task-001.out \
 #     agent.sh copilot task-002 "Implement based on the analysis"
-#
-# Beeknoee API key resolution: $BEEKNOEE_API_KEY → project .mcp.json → ~/.claude.json
 
 set -euo pipefail
 
-AGENT="${1:?Usage: agent.sh <copilot|gemini|beeknoee> <task_id> <prompt> [timeout_secs] [max_retries]}"
+AGENT="${1:?Usage: agent.sh <copilot|gemini> <task_id> <prompt> [max_retries]}"
 TASK_ID="${2:?task_id required}"
 PROMPT="${3:?prompt required}"
-TIMEOUT="${4:-60}"
-MAX_RETRIES="${5:-2}"
+MAX_RETRIES="${4:-2}"
 
 if ! [[ "$TASK_ID" =~ ^[A-Za-z0-9._-]+$ ]]; then
   echo "[orch] invalid task_id: '$TASK_ID' (allowed: [A-Za-z0-9._-])" >&2
@@ -30,6 +27,38 @@ PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 LOG_DIR="$PROJECT_ROOT/.orchestration"
 LOG_FILE="$LOG_DIR/tasks.jsonl"
 mkdir -p "$LOG_DIR"
+CHILD_PID=""
+PARTIAL_OUTPUT_FILE=""
+
+save_partial_output() {
+  local ts waited
+  trap - TERM INT
+  if [ -n "${CHILD_PID:-}" ] && kill -0 "$CHILD_PID" 2>/dev/null; then
+    kill -TERM "$CHILD_PID" 2>/dev/null || true
+    waited=0
+    while kill -0 "$CHILD_PID" 2>/dev/null && [ "$waited" -lt 5 ]; do
+      sleep 1
+      waited=$((waited + 1))
+    done
+    if kill -0 "$CHILD_PID" 2>/dev/null; then
+      kill -KILL "$CHILD_PID" 2>/dev/null || true
+    fi
+    wait "$CHILD_PID" 2>/dev/null || true
+  fi
+  CHILD_PID=""
+  ts=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+  if [ -n "${PARTIAL_OUTPUT_FILE:-}" ] && [ -f "$PARTIAL_OUTPUT_FILE" ]; then
+    printf '\n\n--- CANCELLED at %s ---\n' "$ts" >> "$PARTIAL_OUTPUT_FILE"
+    cat "$PARTIAL_OUTPUT_FILE"
+    rm -f "$PARTIAL_OUTPUT_FILE"
+  else
+    printf '\n\n--- CANCELLED at %s ---\n' "$ts"
+  fi
+  PARTIAL_OUTPUT_FILE=""
+  exit 130
+}
+
+trap 'save_partial_output' TERM
 
 # ── context pipe ──────────────────────────────────────────────────────────────
 if [ -n "${CONTEXT_FILE:-}" ]; then
@@ -52,6 +81,8 @@ print(json.dumps({
     "ts":           datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     "event":        event,
     "task_id":      os.environ.get("_TASK_ID"),
+    "trace_id":     os.environ.get("ORCH_TRACE_ID"),
+    "parent_task_id": os.environ.get("ORCH_PARENT_TASK_ID"),
     "agent":        os.environ.get("_AGENT"),
     "project":      os.environ.get("_PROJECT_ROOT"),
     "status":       status,
@@ -69,97 +100,38 @@ export _TASK_ID="$TASK_ID" _AGENT="$AGENT" _PROMPT_CHARS="${#PROMPT}" _PROMPT="$
 # ── agent runners ──────────────────────────────────────────────────────────────
 
 run_copilot() {
-  perl -e "alarm($TIMEOUT); exec @ARGV" -- \
-    copilot -p "$PROMPT" --allow-all 2>&1
+    copilot --model gpt-5.3-codex -p "$PROMPT" --allow-all 2>&1
 }
 
 run_gemini() {
-  perl -e "alarm($TIMEOUT); exec @ARGV" -- \
-    gemini --prompt "$PROMPT" --output-format text -y 2>&1
-}
-
-run_beeknoee() {
-  local api_key="${BEEKNOEE_API_KEY:-}"
-  if [ -z "$api_key" ]; then
-    # Try project .mcp.json first, then user-scope ~/.claude.json
-    api_key=$(_PROJECT_ROOT="$PROJECT_ROOT" python3 -c "
-import json, os, pathlib
-for p in [
-    os.path.join(os.environ['_PROJECT_ROOT'], '.mcp.json'),
-    str(pathlib.Path.home() / '.claude.json'),
-]:
-    try:
-        d = json.loads(pathlib.Path(p).read_text())
-        key = d.get('mcpServers',{}).get('beeknoee',{}).get('env',{}).get('AI_CHAT_KEY','')
-        if key:
-            print(key)
-            break
-    except Exception:
-        pass
-else:
-    print('')
-" 2>/dev/null)
-  fi
-  if [ -z "$api_key" ]; then
-    echo "[beeknoee] no API key — set BEEKNOEE_API_KEY or configure .mcp.json / ~/.claude.json"
-    return 1
-  fi
-
-  local base_url="${BEEKNOEE_BASE_URL:-https://platform.beeknoee.com/api/v1}"
-  local model="${BEEKNOEE_MODEL:-claude-sonnet-4-6}"
-
-  local payload
-  payload=$(_MODEL="$model" python3 -c "
-import json, os
-print(json.dumps({
-    'model':    os.environ['_MODEL'],
-    'messages': [{'role': 'user', 'content': os.environ['_PROMPT']}],
-    'stream':   False,
-}))")
-
-  local raw status body
-  raw=$(perl -e "alarm($TIMEOUT); exec @ARGV" -- \
-    curl -s -X POST "$base_url/chat/completions" \
-      -H "Authorization: Bearer $api_key" \
-      -H "Content-Type: application/json" \
-      -w $'\n__HTTP_STATUS__=%{http_code}' \
-      -d "$payload" 2>&1) || {
-    echo "[beeknoee] curl failed (network/timeout): $raw"
-    return 1
-  }
-
-  status=$(printf '%s' "$raw" | sed -n 's/^__HTTP_STATUS__=\(.*\)$/\1/p' | tail -1)
-  body=$(printf '%s' "$raw" | sed '/^__HTTP_STATUS__=/d')
-
-  if [ "$status" != "200" ]; then
-    echo "[beeknoee] HTTP $status from $base_url/chat/completions"
-    echo "[beeknoee] body: $(printf '%s' "$body" | head -c 500)"
-    return 1
-  fi
-
-  printf '%s' "$body" | python3 -c "
-import json, sys
-try:
-    d = json.load(sys.stdin)
-    print(d['choices'][0]['message']['content'])
-except (json.JSONDecodeError, KeyError, IndexError) as e:
-    print(f'[beeknoee] malformed response: {type(e).__name__}: {e}')
-    sys.exit(1)
-" 2>&1
+  gemini -p "$PROMPT" -o text -y 2>&1
 }
 
 run_agent() {
-  local start output exit_code duration
+  local start output exit_code duration runner
   start=$(date +%s)
+  PARTIAL_OUTPUT_FILE="$LOG_DIR/.${TASK_ID}.partial.$$"
+  : > "$PARTIAL_OUTPUT_FILE"
 
   case "$AGENT" in
-    copilot)  output=$(run_copilot)  && exit_code=0 || exit_code=$? ;;
-    gemini)   output=$(run_gemini)   && exit_code=0 || exit_code=$? ;;
-    beeknoee) output=$(run_beeknoee) && exit_code=0 || exit_code=$? ;;
+    copilot)  runner="run_copilot" ;;
+    gemini)   runner="run_gemini" ;;
     *)
-      echo "[orch] Unknown agent: $AGENT (valid: copilot, gemini, beeknoee)" >&2
+      echo "[orch] Unknown agent: $AGENT (valid: copilot, gemini)" >&2
       exit 1 ;;
   esac
+
+  "$runner" > "$PARTIAL_OUTPUT_FILE" 2>&1 &
+  CHILD_PID=$!
+  if wait "$CHILD_PID"; then
+    exit_code=0
+  else
+    exit_code=$?
+  fi
+  CHILD_PID=""
+  output=$(cat "$PARTIAL_OUTPUT_FILE")
+  rm -f "$PARTIAL_OUTPUT_FILE"
+  PARTIAL_OUTPUT_FILE=""
 
   duration=$(( $(date +%s) - start ))
 
@@ -167,8 +139,19 @@ run_agent() {
     log_event "complete" "success" "$duration" "$output" ""
     printf '%s\n' "$output"
     return 0
+  elif [ -n "$output" ]; then
+    # Preserve historical soft-success behavior, but treat hard invocation/runtime
+    # failures as real failures so dispatch failover can trigger.
+    if [ "$exit_code" -eq 127 ] || printf '%s' "$output" | grep -Eqi \
+      'command not found|No such file or directory|is not recognized as an internal or external command|Unknown agent:'; then
+      log_event "complete" "failed" "$duration" "$output" "hard failure exit_code=$exit_code"
+      return 1
+    fi
+    log_event "complete" "success" "$duration" "$output" "exit_code=$exit_code (soft success)"
+    printf '%s\n' "$output"
+    return 0
   else
-    log_event "complete" "failed" "$duration" "" "$output"
+    log_event "complete" "failed" "$duration" "" "empty output exit_code=$exit_code"
     return 1
   fi
 }
@@ -176,7 +159,7 @@ run_agent() {
 # ── orchestration loop ────────────────────────────────────────────────────────
 
 log_event "start" "running" 0 "" ""
-echo "[orch] task=$TASK_ID agent=$AGENT timeout=${TIMEOUT}s retries=$MAX_RETRIES project=$PROJECT_ROOT" >&2
+echo "[orch] task=$TASK_ID agent=$AGENT retries=$MAX_RETRIES project=$PROJECT_ROOT" >&2
 
 attempt=0
 while [ "$attempt" -le "$MAX_RETRIES" ]; do

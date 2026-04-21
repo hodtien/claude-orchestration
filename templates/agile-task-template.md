@@ -1,6 +1,6 @@
 ---
 id: TASK-{AGENT}-{NNN}
-agent: {copilot|gemini|beeknoee}
+agent: {copilot|gemini}
 priority: {critical|high|medium|low}
 sprint_id: sprint-{YYYYMMDD}
 assigned_to: {copilot-dev|gemini-ba|gemini-architect|gemini-security|copilot-qa|copilot-devops}

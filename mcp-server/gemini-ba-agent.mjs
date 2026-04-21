@@ -15,7 +15,16 @@ import { promisify } from "util";
 
 const execAsync = promisify(exec);
 const AGENT_ID = process.env.AGENT_ID ?? "gemini-ba-001";
-const MODEL = process.env.GEMINI_MODEL ?? "gemini-2.5-pro";
+const MODEL = process.env.GEMINI_MODEL ?? "gemini-2.5-flash"; // quota group 3 — requirements/BA tasks
+
+// ── startup health check ─────────────────────────────────────────────────────
+try {
+  await execAsync("which gemini", { timeout: 5_000 });
+} catch {
+  console.error(`FATAL: 'gemini' CLI not found in PATH. Install Gemini CLI first.`);
+  console.error(`  See: https://github.com/google-gemini/gemini-cli`);
+  process.exit(1);
+}
 
 function geminiPrompt(prompt) {
   const escaped = prompt.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
@@ -53,14 +62,25 @@ SUMMARY: [1 sentence — what was accomplished]
 NEXT_ACTION: [1 sentence — recommended next step for the orchestrator]
 ---END-GATE---
 
-Then provide your full output below the gate.`;
+Then provide your full output below the gate.
+
+At the very END of your response, add a compressed context block for downstream agents:
+---COMPRESSED-CONTEXT---
+[2-5 sentence summary of the key decisions, requirements, or outputs that a downstream agent would need]
+---END-COMPRESSED-CONTEXT---`;
 
 function parseReviewGate(output) {
   const match = output.match(
-    /---REVIEW-GATE---\s*\nSTATUS:\s*(\S+)\s*\nSUMMARY:\s*(.+)\s*\nNEXT_ACTION:\s*(.+)\s*\n---END-GATE---/
+    /---REVIEW-GATE---[\s\S]*?STATUS:\s*(\S+)[\s\S]*?SUMMARY:\s*(.+?)[\r\n][\s\S]*?NEXT_ACTION:\s*(.+?)[\r\n][\s\S]*?---END-GATE---/
   );
-  if (!match) return { status: "pass", summary: "", next_action: "" };
-  return { status: match[1].trim(), summary: match[2].trim(), next_action: match[3].trim() };
+  if (!match) return { status: "unknown", summary: "Review gate not found in agent output", next_action: "Manual review required" };
+  const status = match[1].trim().toLowerCase();
+  const validStatuses = ["pass", "needs_revision", "blocked"];
+  return {
+    status: validStatuses.includes(status) ? status : "unknown",
+    summary: match[2].trim(),
+    next_action: match[3].trim(),
+  };
 }
 
 // ── shared input additions ────────────────────────────────────────────────────

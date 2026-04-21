@@ -16,8 +16,9 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 RESULTS_DIR="$PROJECT_ROOT/.orchestration/results"
+LOCK_DIR="$PROJECT_ROOT/.orchestration/.locks"
 AGENT_SH="$SCRIPT_DIR/agent.sh"
-mkdir -p "$RESULTS_DIR"
+mkdir -p "$RESULTS_DIR" "$LOCK_DIR"
 
 declare -a PIDS=()
 declare -a OUT_FILES=()
@@ -35,11 +36,23 @@ for spec in "$@"; do
 
   out_file="$RESULTS_DIR/${task_id}.out"
   log_file="$RESULTS_DIR/${task_id}.log"
+  lock_file="$LOCK_DIR/${task_id}.lock"
+
+  # Check for duplicate task_id — skip if already running
+  if [ -f "$lock_file" ] && kill -0 "$(cat "$lock_file" 2>/dev/null)" 2>/dev/null; then
+    echo "[parallel] ⚠️  skip $task_id ($agent) — already running (pid $(cat "$lock_file"))" >&2
+    continue
+  fi
 
   echo "[parallel]   → $task_id ($agent)" >&2
 
-  bash "$AGENT_SH" "$agent" "$task_id" "$prompt" "$timeout" "$retries" \
-    > "$out_file" 2> "$log_file" &
+  # Wrap in subshell with lock file (write PID, cleanup on exit)
+  (
+    echo $$ > "$lock_file"
+    trap 'rm -f "$lock_file"' EXIT
+    bash "$AGENT_SH" "$agent" "$task_id" "$prompt" "$timeout" "$retries" \
+      > "$out_file" 2> "$log_file"
+  ) &
 
   PIDS+=($!)
   OUT_FILES+=("$out_file")

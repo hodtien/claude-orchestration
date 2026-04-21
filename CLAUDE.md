@@ -6,18 +6,49 @@ No sprint ceremonies. No daily standups. Agents complete tasks and report back.
 
 ---
 
+## DELEGATE FIRST — Mandatory Rule
+
+**Claude MUST NOT implement, write code, or analyze large codebases directly.**
+
+| Trigger | Required action |
+|---------|----------------|
+| Any coding task (feature, bug fix, refactor) | `Agent(copilot-agent)` writes files directly |
+| Any analysis, design, architecture, threat model | `Agent(gemini-agent)` |
+| Code review after implementation | `Agent(copilot-agent)` |
+| Task > 30 lines of code | `Agent(copilot-agent)` — never Claude directly |
+| Multiple independent tasks | Spawn agents in parallel (single message, multiple Agent calls) |
+
+**Claude's role is ONLY:**
+1. Decompose the request into clear sub-tasks
+2. Spawn the right agent(s) with a well-formed prompt + file paths
+3. Read agent output, verify files were written, synthesize result for user
+4. Handle escalation if agent returns blocked/error
+
+**Exception**: Config edits < 5 lines, explaining code, one-liners — Claude handles directly.
+
+---
+
 ## Architecture Overview
 
-Two complementary modes:
+Three complementary modes:
 
 ```
-MODE A — Interactive (MCP agents, real-time)
-  Claude ↔ Memory Bank ↔ Specialized Agents
+MODE A — Interactive MCP (real-time, role-specialized)
+  Claude ↔ Memory Bank ↔ Specialized MCP Agents
   Route by task type: BA → Architect → Security → Dev → QA → DevOps
+  Best for: sequential pipeline, handoff protocol, quality gates
 
-MODE B — Async Batch (offline, parallel, token-efficient)
+MODE B — Async Batch (offline, parallel, zero token burn)
   Claude writes specs → task-dispatch.sh runs agents → check_inbox on return
+  Best for: ≥3 independent tasks, large codebases, overnight work
+
+MODE C — Interactive Agent Tool (task panel visible, monitored)
+  Claude spawns gemini-agent / copilot-agent via Agent tool
+  Shows real-time progress in task panel. No arbitrary timeout.
+  Best for: one-off interactive analysis/review, user wants visibility
 ```
+
+**Hybrid rule**: Use Agent tool (Mode C) for interactive sessions where the user wants to see progress. Use MCP (Mode A) when chaining agents with handoff protocol. Use async batch (Mode B) for ≥3 parallel tasks.
 
 ---
 
@@ -30,7 +61,7 @@ MODE B — Async Batch (offline, parallel, token-efficient)
 | `gemini-ba-agent` | Business Analyst | Requirements, user stories, business logic |
 | `gemini-architect` | Technical Architect | System design, API design, ADRs |
 | `gemini-security` | Security Reviewer | Audits, threat models, compliance |
-| `copilot-dev-agent` | Code Reviewer | Review beeknoee output, report findings to Claude |
+| `copilot-dev-agent` | Code Reviewer | Review copilot output, report findings to Claude |
 | `copilot-qa-agent` | QA Engineer | Integration/E2E tests, coverage analysis |
 | `copilot-devops` | DevOps Engineer | CI/CD, Docker, IaC, monitoring |
 
@@ -38,9 +69,9 @@ MODE B — Async Batch (offline, parallel, token-efficient)
 | Server | Role |
 |--------|------|
 | `orch-notify` | Async batch inbox, batch status, metrics |
-| `copilot` | Raw Copilot CLI (review & reporting) |
+| `copilot` | **Primary Dev Agent** — implement features, fix bugs, refactor, review |
 | `gemini` | Raw Gemini CLI (analysis tasks, no role) |
-| `beeknoee` | **Primary Dev Agent** (free) — implement features, fix bugs, refactor |
+| `9router-agent` | **9Router Proxy** — routes to any model via MITM proxy (Claude/Gemini/GPT/OSS). Register: `claude mcp add 9router-agent node ~/claude-orchestration/mcp-server/9router-agent.mjs` |
 
 ---
 
@@ -53,14 +84,11 @@ When user asks to build a feature, chain agents based on what's needed:
 2. gemini-architect: design_architecture        ← if non-trivial design needed
    gemini-security: threat_model               ← run in parallel with above
 3. memory-bank: store_task for each task
-4. beeknoee: implement_feature                 ← PRIMARY dev (free), generates code to .out
-   └─ reviewer: copilot                        ← auto-triggered: applies .out to files + reviews
+4. copilot: implement_feature                   ← use in task-dispatch.sh — has filesystem tools natively
 5. copilot-qa-agent: write_integration_tests
 6. gemini-security: security_audit             ← before deploy
 7. copilot-devops: configure_deployment        ← if deploying
 ```
-
-For async dispatch, set `reviewer: copilot` in task spec — copilot auto-applies beeknoee output after generation.
 
 Skip steps that don't apply.
 
@@ -170,25 +198,38 @@ Task spec format: see `templates/task-spec.example.md`
 
 ## Agent Routing Rules
 
-| Task Type | Use |
-|-----------|-----|
-| Requirements / user stories | `gemini-ba-agent` |
-| System design / API / ADR | `gemini-architect` |
-| Security review / threat model | `gemini-security` |
-| Feature implementation / bug fix / refactor | `beeknoee` (primary, free) |
-| Code review after implementation | `copilot-dev-agent` → reports findings to Claude |
-| Tests (integration/E2E/coverage) | `copilot-qa-agent` |
-| CI/CD / Docker / IaC | `copilot-devops` |
-| Large codebase analysis (>500 LOC) | `gemini` raw CLI or batch |
-| ≥3 parallel tasks | `task-dispatch.sh --parallel` |
-| Simple <100 LOC code | Claude directly |
-| Quick questions | `beeknoee` |
+| Task Type | Mode A — MCP | Mode B — Async Batch | Mode C — Agent Tool |
+|-----------|-------------|---------------------|---------------------|
+| Requirements / user stories | `gemini-ba-agent` | `gemini` in task spec | `gemini-agent` |
+| System design / API / ADR | `gemini-architect` | `gemini` in task spec | `gemini-agent` |
+| Security review / threat model | `gemini-security` | `gemini` in task spec | `gemini-agent` |
+| Feature implementation / bug fix | `copilot-dev-agent` (MCP) | `copilot` in task spec | `copilot-agent` |
+| Code review after implementation | `copilot-dev-agent` | `copilot` in task spec | `copilot-agent` |
+| Tests (integration/E2E/coverage) | `copilot-qa-agent` | `copilot` in task spec | — |
+| CI/CD / Docker / IaC | `copilot-devops` | `copilot` in task spec | `copilot-agent` |
+| Large codebase analysis (>500 LOC) | `gemini` raw MCP | `gemini` batch | `gemini-agent` |
+| ≥3 parallel tasks | — | `task-dispatch.sh --parallel` | — |
+| Simple <100 LOC / quick questions | Claude directly | — | — |
+
+**When to use Mode C (Agent tool):**
+- User explicitly wants task panel visibility
+- One-off task that doesn't fit a pipeline
+- Interactive back-and-forth with a sub-agent mid-session
+
+**Agent tool invocation:**
+```
+Agent(subagent_type="gemini-agent", prompt="...")    ← uses agents/gemini-agent.md
+Agent(subagent_type="copilot-agent", prompt="...")   ← uses agents/copilot-agent.md
+Agent(subagent_type="9router-agent", prompt="...")   ← uses agents/9router-agent.md (routes via 9Router proxy)
+```
 
 ---
 
-## Metrics
+## Metrics & PM Dashboard
 
 ```
+orch-notify: get_project_health (unified PM dashboard showing memory-bank + orchestration stats)
+orch-notify: check_escalations (review DLQ/failed tasks that need PM intervention)
 orch-notify: quick_metrics (async batch stats)
 memory-bank: list_tasks (status=done) → completed work summary
 ```
@@ -201,11 +242,59 @@ Target KPIs: coverage >80% · 0 critical vulns · token budget <100%
 
 | Condition | Action |
 |-----------|--------|
-| Agent returns error | Retry once, then Claude handles directly |
+| Agent returns error | Task enters DLQ. Review `check_escalations` report, update spec, and redispatch. |
 | Output quality low | Claude re-does task or adds detailed feedback to task-revise.sh |
 | Task touches secrets/auth | Claude handles directly — never send secrets to subagents |
 | Agents disagree | Claude arbitrates, documents decision in memory bank |
 | Rate limit | Switch to fallback agent per routing table |
+
+---
+
+## ECC Skills & Local Commands
+
+This project loads the `everything-claude-code` plugin. The following skills and commands are available on top of the MCP agent layer.
+
+### Local Skills (in `skills/`)
+
+| Skill | When to use |
+|-------|-------------|
+| `orchestration-patterns` | Loop architecture, agent routing, spawn pipeline, de-sloppify pass |
+| `agent-quality-gates` | Verification loop, council triggers, revision protocol, security hard stops |
+| `context-and-cost` | Token budget audit, model routing, cost estimation before large batches |
+| `sub-agent-injection` | How to inject skills/rules into gemini/copilot per task type |
+| `agent-guides/copilot-review-guide` | Review severity + checklist injected into copilot code review |
+| `agent-guides/gemini-analysis-guide` | Output shape standards injected into gemini analysis tasks |
+
+### Local Commands (in `commands/`)
+
+| Command | Description |
+|---------|-------------|
+| `/council <question>` | Four-voice council (Architect/Skeptic/Pragmatist/Critic) for ambiguous decisions |
+| `/verify` | Full verification loop — build/types/lint/tests/security/diff. Reports READY or NOT READY |
+| `/dispatch <work>` | Decompose + write task specs + run `task-dispatch.sh --parallel`. Stops; resumes on "check inbox" |
+
+### ECC Skills (from `everything-claude-code:` plugin)
+
+Key skills available via `everything-claude-code:<name>`:
+
+| Skill | Use for |
+|-------|---------|
+| `autonomous-loops` | Loop patterns — sequential pipeline, infinite agentic, continuous PR loop, Ralphinho DAG |
+| `agentic-engineering` | Eval-first execution, task decomposition (15-min units), session strategy |
+| `council` | Full council protocol with anti-anchoring mechanism |
+| `verification-loop` | Comprehensive post-implementation verification phases |
+| `context-budget` | Token overhead audit across agents, skills, MCP tools |
+| `cost-aware-llm-pipeline` | Model routing, budget tracking, retry logic, prompt caching |
+| `enterprise-agent-ops` | Operational controls for long-lived agent workloads |
+| `agent-harness-construction` | Action space design, observation formatting, error recovery |
+| `deep-research` | Multi-source research before implementation |
+| `architecture-decision-records` | Formalizing architectural decisions as ADRs |
+| `api-design` | REST/GraphQL API design patterns |
+| `deployment-patterns` | CI/CD, containerization, IaC patterns |
+| `security-review` | OWASP Top 10, threat modeling patterns |
+| `tdd-workflow` | Test-driven development workflow |
+| `backend-patterns` | Server-side architecture patterns |
+| `docker-patterns` | Container and compose patterns |
 
 ---
 
@@ -219,6 +308,10 @@ Target KPIs: coverage >80% · 0 critical vulns · token budget <100%
   mcp-server/    # orch-notify + 7 specialized agent MCP servers
   templates/     # task-dev.md, task-ba.md, task-qa.md, task-security-review.md,
                  # agile-task-template.md, completion-report-template.md, task-spec.example.md
+  agents/        # Agent tool YAMLs: gemini-agent.md, copilot-agent.md (Mode C — task panel visible)
+  skills/        # local skills: orchestration-patterns, agent-quality-gates, context-and-cost
+  commands/      # local slash commands: /council, /verify, /dispatch
+  everything-claude-code/  # ECC plugin — 150+ skills, rules, agents, commands
   CLAUDE.md      # this file — loaded every session
   QUICK_START.md # 5-minute guide
   TASK_ROUTING.md, USAGE.md — detailed routing and workflow docs

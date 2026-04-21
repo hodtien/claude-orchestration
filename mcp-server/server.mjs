@@ -21,6 +21,7 @@ import {
 import { execSync } from "child_process";
 import { readdirSync, readFileSync, statSync, existsSync } from "fs";
 import { join, basename } from "path";
+import { homedir } from "os";
 
 // ── resolve project root ─────────────────────────────────────────────────────
 function getProjectRoot() {
@@ -222,6 +223,103 @@ function listBatches() {
   });
 }
 
+function getProjectHealth() {
+  const metrics = getQuickMetrics();
+  const batches = listBatches();
+
+  const memoryDir = process.env.STORAGE_DIR
+    ? process.env.STORAGE_DIR.replace('~', homedir())
+    : join(homedir(), '.memory-bank-storage');
+  const taskDir = join(memoryDir, 'tasks');
+
+  let mbTasks = [];
+  try {
+    const files = readdirSync(taskDir).filter((f) => f.endsWith('.json'));
+    mbTasks = files.map((f) => {
+      try {
+        return JSON.parse(readFileSync(join(taskDir, f), 'utf8'));
+      } catch {
+        return null;
+      }
+    }).filter(Boolean);
+  } catch {
+    mbTasks = [];
+  }
+
+  const byStatus = mbTasks.reduce((acc, t) => {
+    const s = t.status || 'unknown';
+    acc[s] = (acc[s] || 0) + 1;
+    return acc;
+  }, {});
+
+  const activeSprints = [];
+  try {
+    const sprintDir = join(memoryDir, 'sprints');
+    const sFiles = readdirSync(sprintDir).filter((f) => f.endsWith('.json'));
+    for (const f of sFiles) {
+      try {
+        const s = JSON.parse(readFileSync(join(sprintDir, f), 'utf8'));
+        if (s.status === 'active' || s.status === 'planning') activeSprints.push({ id: s.id, status: s.status, goal: s.goal || '' });
+      } catch {}
+    }
+  } catch {}
+
+  return {
+    timestamp: new Date().toISOString(),
+    orchestration: {
+      success_rate_pct: metrics.success_rate_pct ?? 0,
+      avg_duration_s: metrics.avg_duration_s ?? 0,
+      per_agent: metrics.per_agent ?? {},
+      total_completions: metrics.total_completions ?? 0,
+    },
+    memory_bank: {
+      total_tasks: mbTasks.length,
+      status_breakdown: byStatus,
+      active_sprints: activeSprints,
+    },
+    batch_pipeline: {
+      open_batches: batches,
+      open_batch_count: batches.length,
+    },
+    recommendation: (metrics.success_rate_pct ?? 0) < 80
+      ? 'Success rate below target. Review failed tasks and adjust prompts/dependencies.'
+      : 'Pipeline health is stable. Continue with current PM routing strategy.'
+  };
+}
+
+function checkEscalations() {
+  const dlqDir = join(ORCH_DIR, 'dlq');
+  const inboxDir = join(ORCH_DIR, 'inbox');
+  const items = safeReaddir(dlqDir).filter((f) => f.endsWith('.meta.json'));
+
+  const escalations = items.map((f) => {
+    const raw = safeRead(join(dlqDir, f));
+    if (!raw) return null;
+    try {
+      const meta = JSON.parse(raw);
+      return {
+        task_id: meta.task_id,
+        batch_id: meta.batch_id,
+        agent: meta.agent,
+        retries: meta.retries,
+        ts: meta.ts,
+        error_log: meta.error_log,
+        suggested_action: 'Review error_log and regenerate task spec with clearer constraints/context.',
+      };
+    } catch {
+      return null;
+    }
+  }).filter(Boolean);
+
+  return {
+    has_escalations: escalations.length > 0,
+    count: escalations.length,
+    escalations,
+    note: escalations.length > 0 ? 'Use task-revise.sh or update task spec then redispatch.' : 'No escalations pending.',
+    inbox_hint: existsSync(inboxDir),
+  };
+}
+
 // ── MCP server setup ─────────────────────────────────────────────────────────
 const server = new Server(
   { name: "orch-notify", version: "1.0.0" },
@@ -259,6 +357,18 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         "Get quick orchestration metrics — success rate, average duration, per-agent stats. Lightweight summary from audit log.",
       inputSchema: { type: "object", properties: {}, required: [] },
     },
+    {
+      name: "get_project_health",
+      description:
+        "Unified PM dashboard: combines orchestration metrics, memory-bank task/sprint status, and open batch pipeline health.",
+      inputSchema: { type: "object", properties: {}, required: [] },
+    },
+    {
+      name: "check_escalations",
+      description:
+        "Check DLQ-based escalations for blocked/failed tasks and return PM-friendly remediation hints.",
+      inputSchema: { type: "object", properties: {}, required: [] },
+    },
   ],
 }));
 
@@ -278,6 +388,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       break;
     case "quick_metrics":
       result = getQuickMetrics();
+      break;
+    case "get_project_health":
+      result = getProjectHealth();
+      break;
+    case "check_escalations":
+      result = checkEscalations();
       break;
     default:
       return {

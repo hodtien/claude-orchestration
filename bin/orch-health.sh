@@ -84,11 +84,6 @@ if [ "$MODE" = "deep" ]; then
   echo "Deep ping (costs tokens):"
   deep_ping copilot 30
   deep_ping gemini  30
-  if [ -n "${BEEKNOEE_API_KEY:-}" ] || grep -q '"beeknoee"' "$PROJECT_ROOT/.mcp.json" 2>/dev/null || grep -q '"beeknoee"' "$HOME/.claude.json" 2>/dev/null; then
-    deep_ping beeknoee 20
-  else
-    printf '  %-30s ⊘  (not configured — skipped)\n' "beeknoee deep ping"
-  fi
 fi
 
 echo
