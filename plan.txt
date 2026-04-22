@@ -1,0 +1,161 @@
+# Claude-Orchestration — Breakthrough Upgrade Ideas
+Generated: 2026-04-22
+
+## Phase 5: Next-Generation Orchestration Features
+
+### 1. Autonomous Learning Loop (Self-Evolution)
+**Core:** Orchestrator learns from every batch execution and improves routing/triage decisions over time.
+- Track: success rate per agent per task type, average tokens used, retry patterns
+- Build implicit model: "copilot is 90% success for refactoring, gemini for design"
+- Auto-tune tier thresholds based on actual outcomes
+- Store learnings in `.orchestration/learnings/`
+- **Impact:** Reduce failed tasks by 30%, lower token costs by 20%
+- **Complexity:** Medium
+
+### 2. Task Decomposer Agent
+**Core:** Automatically break down complex tasks into optimal sub-tasks.
+- Input: vague user request ("build auth system")
+- Output: DAG of specific tasks with dependencies
+- Uses intent detection + codebase analysis
+- Integrates with Budget-Tiered Triage
+- **Impact:** Enable natural language task submission
+- **Complexity:** High
+
+### 3. Real-Time Cost Dashboard
+**Core:** Live token/budget tracking with alerts and projections.
+- Show: per-batch cost, per-agent cost, daily/monthly projections
+- Alert when approaching budget limits
+- Auto-suggest cheaper routing options
+- Web dashboard in `bin/orch-dashboard.sh` (terminal-based)
+- **Impact:** Visibility into spend, prevent budget overruns
+- **Complexity:** Low
+
+### 4. Cross-Project Context Transfer
+**Core:** Share learnings/context between different projects.
+- Pattern: "This project uses React, learned patterns can apply to similar tasks"
+- Shared style memory across projects
+- Transfer successful task specs between similar projects
+- Privacy controls: what to share vs keep local
+- **Impact:** Faster onboarding for new projects
+- **Complexity:** Medium
+
+### 5. Intent Verification Gate
+**Core:** Before executing, verify task spec against codebase reality.
+- Check: files mentioned exist, APIs referenced are real, dependencies are correct
+- Prevent wasted agent time on impossible tasks
+- Generate "confidence score" for task specs
+- Integrate with council protocol for low-confidence tasks
+- **Impact:** Reduce failed tasks, save tokens
+- **Complexity:** Medium
+
+### 6. Parallel Sprint Execution
+**Core:** Run multiple independent batches in true parallel.
+- Current: tasks within batch run parallel
+- New: multiple batches run concurrently with resource management
+- Queue management with priority
+- GPU/memory aware scheduling
+- **Impact:** 3-5x throughput improvement
+- **Complexity:** High
+
+### 7. Self-Healing DAG (Enhanced)
+**Core:** DAG that repairs itself on failure.
+- Phase 1: Detect failure, identify blocked paths
+- Phase 2: Re-route around failures automatically
+- Phase 3: Propose alternative approaches to orchestrator
+- Store "healed" DAG vs original for comparison
+- Already partially implemented in `healed-dags/`
+- **Impact:** Autonomous resilience
+- **Complexity:** Medium
+
+### 8. Agent Swap Protocol
+**Core:** Hot-swap between gemini/copilot based on real-time availability.
+- Current problem: agent DOWN blocks entire batch
+- Solution: detect agent failure, automatically route to fallback
+- Dynamic agent discovery (check health before dispatch)
+- Prefer cheaper available agent over expensive slow one
+- **Impact:** Eliminate batch blocks, reduce wait time
+- **Complexity:** Low
+
+### 9. Context Compression Engine
+**Core:** Automatically compress old context to fit more in window.
+- Monitor: context usage per session
+- Trigger: when >70% full, compress old artifacts
+- Method: keep key decisions, summaries, drop raw outputs
+- Priority: preserve recent > important > old
+- **Impact:** Handle 3x larger batches without context overflow
+- **Complexity:** Medium
+
+### 10. Scheduled Autonomous Runners
+**Core:** Schedule batches to run at optimal times.
+- Cron-based scheduling: "run smoke tests every hour"
+- Conditional triggers: "on PR open, run phase1"
+- Pre-warm agents before expected busy periods
+- Queue draining during rate limit windows
+- **Impact:** Continuous integration without manual triggers
+- **Complexity:** Low
+
+---
+
+## Priority Recommendation
+
+### Immediate (Do First):
+1. **Agent Swap Protocol** — Quick win, fixes current agent DOWN problem
+2. **Real-Time Cost Dashboard** — Low effort, high visibility
+3. **Scheduled Autonomous Runners** — Already have cron infrastructure
+
+### Short Term (Next Sprint):
+4. **Self-Healing DAG Enhancement** — Build on existing healed-dags/
+5. **Intent Verification Gate** — Quality improvement
+6. **Context Compression Engine** — Scalability
+
+### Long Term (Future Phase):
+7. **Task Decomposer Agent** — Major capability unlock
+8. **Autonomous Learning Loop** — Self-improvement
+9. **Cross-Project Context Transfer** — Knowledge reuse
+10. **Parallel Sprint Execution** — Maximum throughput
+
+---
+
+## Implementation Candidates for Next Session
+
+Based on effort vs impact, suggest starting with:
+1. Agent Swap Protocol (low complexity, high impact)
+2. Scheduled Autonomous Runners (low complexity, existing cron infra)
+3. Real-Time Cost Dashboard (low complexity, visibility)
+
+---
+
+## Phase 5 Completed (2026-04-22)
+- ✅ Agent Swap Protocol (`bin/agent-swap.sh`, `lib/agent-failover.sh`)
+- ✅ Real-Time Cost Dashboard (`bin/orch-cost-dashboard.sh`, `lib/cost-tracker.sh`)
+- ✅ Scheduled Autonomous Runners (`bin/orch-scheduler.sh`, `bin/scheduled-run.sh`)
+- ✅ Self-Healing DAG Enhancement (`lib/dag-healer.sh`)
+- ✅ Intent Verification Gate (`lib/intent-verifier.sh`)
+- ✅ Context Compression Engine (`lib/context-compressor.sh`)
+- ✅ Task Decomposer Agent (`lib/task-decomposer.sh`, `bin/decompose.sh`, `bin/intent-detect.sh`)
+- ✅ Autonomous Learning Loop (`lib/learning-engine.sh`, `bin/learn-from-batch.sh`, `bin/routing-advisor.sh`)
+- ✅ Cross-Project Context Transfer (`lib/cross-project.sh`, `bin/share-learnings.sh`, `bin/transfer-context.sh`)
+- ✅ Parallel Sprint Execution (`lib/sprint-queue.sh`, `bin/sprint-manager.sh`, `bin/parallel-run.sh`)
+
+## Phase 4 Completed (2026-04-22)
+- Budget-Tiered Task Triage
+- Shared State Speculation Layer
+- Consensus Engine
+- Style Memory Persistence
+- Provenance Chains
+
+
+4. Self-Healing DAG Enhancement (lib/dag-healer.sh)                                                                                                       
+    - Detects failure types, selects healing strategy, generates healed DAGs
+  5. Intent Verification Gate (lib/intent-verifier.sh)                                                                                                      
+    - Verifies task specs before execution with confidence scoring                                                                                        
+  6. Context Compression Engine (lib/context-compressor.sh)                                                                                                 
+    - Auto-compresses old context to fit more in window                                                                                                     
+  7. Task Decomposer Agent (lib/task-decomposer.sh, bin/decompose.sh, bin/intent-detect.sh)
+    - Breaks complex tasks into 15-min executable units                                                                                                     
+  8. Autonomous Learning Loop (lib/learning-engine.sh, bin/learn-from-batch.sh, bin/routing-advisor.sh)                                                     
+    - Learns from batch outcomes, updates routing rules
+  9. Cross-Project Context Transfer (lib/cross-project.sh, bin/share-learnings.sh, bin/transfer-context.sh)                                                 
+    - Shares patterns and learnings between projects                                                                                                      
+  10. Parallel Sprint Execution (lib/sprint-queue.sh, bin/sprint-manager.sh, bin/parallel-run.sh)                                                           
+    - Runs multiple batches in true parallel with resource management  

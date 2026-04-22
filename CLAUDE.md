@@ -6,120 +6,46 @@ No sprint ceremonies. No daily standups. Agents complete tasks and report back.
 
 ---
 
-## DELEGATE FIRST — Mandatory Rule
+## When to delegate
 
-**Claude MUST NOT implement, write code, or analyze large codebases directly.**
-
-| Trigger | Required action |
+| Trigger | Default action |
 |---------|----------------|
-| Any coding task (feature, bug fix, refactor) | `Agent(copilot-agent)` writes files directly |
-| Any analysis, design, architecture, threat model | `Agent(gemini-agent)` |
-| Code review after implementation | `Agent(copilot-agent)` |
-| Task > 30 lines of code | `Agent(copilot-agent)` — never Claude directly |
-| Multiple independent tasks | Spawn agents in parallel (single message, multiple Agent calls) |
+| Any coding task (feature, bug fix, refactor) | Agent tool → writes files directly |
+| Analysis, design, architecture, threat model | Agent tool → `gemini-agent` |
+| Code review after implementation | Agent tool → `copilot-agent` |
+| Task > 30 lines of code | Agent tool — never Claude directly |
+| Multiple independent tasks | Spawn agents in parallel |
 
-**Claude's role is ONLY:**
-1. Decompose the request into clear sub-tasks
-2. Spawn the right agent(s) with a well-formed prompt + file paths
-3. Read agent output, verify files were written, synthesize result for user
-4. Handle escalation if agent returns blocked/error
-
-**Exception**: Config edits < 5 lines, explaining code, one-liners — Claude handles directly.
+**Exceptions (Claude handles directly):** Config edits < 5 lines, explaining code, one-liners, quick questions.
 
 ---
 
-## Architecture Overview
+## Two modes of operation
 
-Three complementary modes:
+### Mode 1 — Async batch (primary, token-efficient)
+Claude writes task specs → `task-dispatch.sh` runs agents → user says "check inbox".
+Best for: ≥2 independent tasks, large codebases, when you want 0-token-burn while agents work.
 
-```
-MODE A — Interactive MCP (real-time, role-specialized)
-  Claude ↔ Memory Bank ↔ Specialized MCP Agents
-  Route by task type: BA → Architect → Security → Dev → QA → DevOps
-  Best for: sequential pipeline, handoff protocol, quality gates
+### Mode 2 — Interactive subagent (real-time, visible)
+Claude spawns agents via the Agent tool or calls the `9router-agent` MCP `route_task` tool.
+Best for: one-off tasks, ambiguous scope, when you want to iterate with the subagent.
 
-MODE B — Async Batch (offline, parallel, zero token burn)
-  Claude writes specs → task-dispatch.sh runs agents → check_inbox on return
-  Best for: ≥3 independent tasks, large codebases, overnight work
-
-MODE C — Interactive Agent Tool (task panel visible, monitored)
-  Claude spawns gemini-agent / copilot-agent via Agent tool
-  Shows real-time progress in task panel. No arbitrary timeout.
-  Best for: one-off interactive analysis/review, user wants visibility
-```
-
-**Hybrid rule**: Use Agent tool (Mode C) for interactive sessions where the user wants to see progress. Use MCP (Mode A) when chaining agents with handoff protocol. Use async batch (Mode B) for ≥3 parallel tasks.
+**PM judgment first.** The routing table below is the default — break it when it makes sense.
 
 ---
 
 ## MCP Servers Available
 
-### Specialized Agents
-| Server | Role | When to use |
-|--------|------|-------------|
-| `memory-bank` | Task & Context Store | Every session — store tasks, knowledge |
-| `gemini-ba-agent` | Business Analyst | Requirements, user stories, business logic |
-| `gemini-architect` | Technical Architect | System design, API design, ADRs |
-| `gemini-security` | Security Reviewer | Audits, threat models, compliance |
-| `copilot-dev-agent` | Code Reviewer | Review copilot output, report findings to Claude |
-| `copilot-qa-agent` | QA Engineer | Integration/E2E tests, coverage analysis |
-| `copilot-devops` | DevOps Engineer | CI/CD, Docker, IaC, monitoring |
+## MCP Servers
 
-### Infrastructure
 | Server | Role |
 |--------|------|
-| `orch-notify` | Async batch inbox, batch status, metrics |
-| `copilot` | **GitHub Copilot CLI** — implement features, fix bugs, refactor, review |
-| `gemini` | **Gemini CLI** — analysis tasks, requirements, architecture |
+| `memory-bank` | Task & context store |
+| `orch-notify` | Batch inbox, status, metrics |
+| `9router-agent` | Route tasks to optimal model via `route_task(task_type, prompt)` |
 
----
+**CLI agents** (via shell exec — each manages its own auth): `gemini-cli`, `copilot`.
 
-## Feature Development Flow
-
-When user asks to build a feature, chain agents based on what's needed:
-
-```
-1. gemini-ba-agent: analyze_requirements       ← if scope is unclear
-2. gemini-architect: design_architecture        ← if non-trivial design needed
-   gemini-security: threat_model               ← run in parallel with above
-3. memory-bank: store_task for each task
-4. copilot: implement_feature                   ← use in task-dispatch.sh — has filesystem tools natively
-5. copilot-qa-agent: write_integration_tests
-6. gemini-security: security_audit             ← before deploy
-7. copilot-devops: configure_deployment        ← if deploying
-```
-
-Skip steps that don't apply.
-
----
-
-## Inter-Agent Handoff Protocol
-
-Every agent call follows this pattern:
-
-**Before calling an agent:**
-```
-1. memory-bank: get_artifact(taskId, "<prior_agent_role>")   ← fetch prior output
-2. Pass content as prior_artifacts: [{agent_role, content}]  ← inject into agent call
-```
-
-**After an agent returns:**
-```
-3. Check review_gate.status in the response:
-   - "pass"           → store artifact, proceed to next step
-   - "needs_revision" → call create_revision, retry with revision_feedback
-   - "blocked"        → STOP, report to user before continuing
-4. memory-bank: store_artifact(taskId, "<agent_role>", result, {status, summary, next_action})
-5. memory-bank: update_task(taskId, {status: "in_progress", last_agent: "<agent_role>"})
-```
-
-**Quality gates (hard stops):**
-- Security agent returns `blocked` → do NOT deploy, report CRITICAL findings to user
-- QA agent returns `needs_revision` → coverage < 80%, request more tests before security audit
-
----
-
-## Revision Loop
 
 When `review_gate.status === "needs_revision"`:
 
@@ -197,46 +123,20 @@ Task spec format: see `templates/task-spec.example.md`
 
 ## Agent Routing Rules
 
-All subagent calls route through **local CLI binaries** (gemini-cli, copilot-cli). No 9Router proxy needed.
+## Routing
 
-**CLI Agents:**
+**Single source of truth:** `config/models.yaml` (task_type → model mapping with parallel/fallback).
 
-| Agent | CLI | Model | Best for |
-|-------|-----|-------|----------|
-| `gemini-deep` | `gemini-cli` | `gemini-3.1-pro-preview` | Deep architecture, security, complex reasoning |
-| `gemini-fast` | `gemini-cli` | `gemini-2.5-flash` | Requirements, analysis, balanced tasks |
-| `copilot` / `gh-code` | `copilot-cli` | `gpt-5.3-codex` | Code implementation, tests, reviews |
-| `gh-thin` | `copilot-cli` | `gpt-5.3-codex` | Lightweight tasks |
-
-| Task Type | Mode A — MCP | Mode B — CLI | Mode C — Agent Tool |
-|-----------|-------------|--------------|---------------------|
-| Requirements / user stories | `gemini-ba-agent` | `gemini-fast` | `gemini-agent` |
-| System design / API / ADR | `gemini-architect` | `gemini-deep` | `gemini-agent` |
-| Security review / threat model | `gemini-security` | `gemini-deep` | `gemini-agent` |
-| Feature implementation / bug fix | `copilot-dev-agent` (MCP) | `copilot` | `copilot-agent` |
-| Code review after implementation | `copilot-dev-agent` | `copilot` | `copilot-agent` |
-| Tests (integration/E2E/coverage) | `copilot-qa-agent` | `copilot` | — |
-| CI/CD / Docker / IaC | `copilot-devops` | `copilot` | `copilot-agent` |
-| Large codebase analysis (>500 LOC) | `gemini` raw MCP | `gemini-deep` | `gemini-agent` |
-| ≥3 parallel tasks | — | `task-dispatch.sh --parallel` | — |
-| Simple <100 LOC / quick questions | Claude directly | — | — |
-
-**Legacy aliases:**
-- `gemini` → `gemini-fast`
-- `copilot` → `copilot`
-- `gh-code` → `copilot`
-- `gh-thin` → `copilot`
-
-**When to use Mode C (Agent tool):**
-- User explicitly wants task panel visibility
-- One-off task that doesn't fit a pipeline
-- Interactive back-and-forth with a sub-agent mid-session
-
-**Agent tool invocation:**
-```
-Agent(subagent_type="gemini-agent", prompt="...")    ← uses agents/gemini-agent.md (calls gemini-cli)
-Agent(subagent_type="copilot-agent", prompt="...")   ← uses agents/copilot-agent.md (calls copilot-cli)
-```
+| Task | Route |
+|------|-------|
+| Quick answer / classify | `route_task("quick_answer", prompt)` |
+| Implement feature / fix bug | `route_task("implement_feature", prompt)` |
+| Code review | `route_task("code_review", prompt)` |
+| Architecture / security audit | `route_task("architecture_analysis", prompt)` |
+| Long-context analysis | `gemini-cli` or Agent tool |
+| Repo-aware code work | `copilot CLI` or Agent tool |
+| ≥2 parallel tasks | Write task specs → `task-dispatch.sh --parallel` |
+| Simple <30 lines | Claude directly |
 
 ---
 
@@ -317,8 +217,9 @@ Key skills available via `everything-claude-code:<name>`:
 
 ```
 ~/claude-orchestration/
-  bin/           # sprint-planning.sh, daily-standup.sh, task-dispatch.sh, agile-setup.sh, etc.
-  workflows/     # ceremony wrappers → delegates to bin/ (sprint-planning, daily-standup, etc.)
+  bin/           # task-dispatch.sh, agile-setup.sh, orch-dashboard.sh, setup-router.sh, etc.
+  bin/deprecated/ # archived scripts (not used in current flow, kept for reference)
+  config/        # models.yaml (task→model mapping) — read by 9router-agent MCP + task-dispatch.sh
   memory-bank/   # persistent storage MCP (tasks, sprints, agents, knowledge, backlog, velocity)
   mcp-server/    # orch-notify + 7 specialized agent MCP servers
   templates/     # task-dev.md, task-ba.md, task-qa.md, task-security-review.md,
