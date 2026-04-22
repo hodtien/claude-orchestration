@@ -20,9 +20,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprot
 import Anthropic from "@anthropic-ai/sdk";
 import { readFileSync, existsSync } from "fs";
 import { join, dirname } from "path";
-import { spawn } from "child_process";
 import { fileURLToPath } from "url";
-import yaml from "js-yaml";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 
@@ -36,30 +34,6 @@ if (existsSync(envPath)) {
       process.env[m[1]] = m[2];
     }
   }
-}
-
-// ── Load models.yaml at startup ───────────────────────────────────────────────
-const configPath = join(__dir, "..", "config", "models.yaml");
-let modelsConfig = { task_mapping: { default: { parallel: ["cc/claude-haiku-4-5"], fallback: [] } }, models: {} };
-try {
-  modelsConfig = yaml.load(readFileSync(configPath, "utf8"));
-} catch (e) {
-  console.error("Warning: could not load config/models.yaml:", e.message);
-}
-
-// ── execCli helper ─────────────────────────────────────────────────────────────
-async function execCli(binary, prompt, timeoutSec = 120) {
-  return new Promise((resolve) => {
-    const proc = spawn(binary, ["-p", prompt], { stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "", stderr = "";
-    const timer = setTimeout(() => { proc.kill("SIGTERM"); resolve({ success: false, error: "timeout" }); }, timeoutSec * 1000);
-    proc.stdout.on("data", (d) => stdout += d);
-    proc.stderr.on("data", (d) => stderr += d);
-    proc.on("close", (code) => {
-      clearTimeout(timer);
-      resolve(code === 0 ? { success: true, output: stdout } : { success: false, error: stderr });
-    });
-  });
 }
 
 const PROXY_URL  = process.env.ANTHROPIC_BASE_URL ?? "http://localhost:20128";
@@ -221,29 +195,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       description: "Show the current 9Router proxy endpoint, default model, and connection status",
       inputSchema: { type: "object", properties: {} },
     },
-    {
-      name: "route_task",
-      description:
-        "Delegate a task to the optimal model based on task type. " +
-        "Reads config/models.yaml to resolve parallel/fallback models. " +
-        "Use this instead of `chat` when you don't know which model to pick.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          task_type: {
-            type: "string",
-            description: "One of: quick_answer, summarize, classify_intent, implement_feature, fix_bug, " +
-              "refactor_code, write_tests, code_review, ui_ux_review, architecture_analysis, " +
-              "security_audit, analyze_requirements, create_user_stories, design_api, system_design, " +
-              "write_dockerfile, setup_ci_cd, default",
-          },
-          prompt:  { type: "string", description: "The actual task prompt" },
-          system:  { type: "string", description: "Optional system prompt override" },
-          ...HANDOFF_SCHEMA,
-        },
-        required: ["task_type", "prompt"],
-      },
-    },
   ],
 }));
 
@@ -361,78 +312,6 @@ ${REVIEW_GATE_INSTRUCTION}`;
               default_model: MODEL,
               max_tokens:    MAX_TOKENS,
               note: "Override model per-call via the 'model' parameter. Available models depend on 9Router UI configuration.",
-            }, null, 2),
-          }],
-        };
-      }
-
-      // ── route_task (auto-route by task type) ──────────────────────────────
-      case "route_task": {
-        const taskType = args.task_type;
-        const mapping  = (modelsConfig.task_mapping || {})[taskType]
-                       ?? (modelsConfig.task_mapping || {}).default
-                       ?? { parallel: [], fallback: [] };
-        const parallelModels = mapping.parallel || [];
-        const fallbackModels = mapping.fallback || [];
-        const attempted = [];
-        let output   = "";
-        let modelUsed = "";
-
-        // Try parallel models (first success wins)
-        outer:
-        for (const model of parallelModels) {
-          attempted.push(model);
-          const cfg = (modelsConfig.models || {})[model];
-          if (!cfg) { attempted[attempted.length - 1] += " [unknown model]"; continue; }
-          try {
-            if (cfg.channel === "router") {
-              output    = await routerCall(args.system, args.prompt, model);
-              modelUsed = model;
-              break outer;
-            } else if (cfg.channel === "gemini_cli") {
-              const r = await execCli("gemini", args.prompt);
-              if (r.success) { output = r.output; modelUsed = model; break outer; }
-            } else if (cfg.channel === "copilot_cli") {
-              const r = await execCli("copilot", args.prompt);
-              if (r.success) { output = r.output; modelUsed = model; break outer; }
-            }
-          } catch (_) { /* try next */ }
-        }
-
-        // Fallback on parallel failure
-        if (!modelUsed) {
-          for (const model of fallbackModels) {
-            attempted.push(model);
-            const cfg = (modelsConfig.models || {})[model];
-            if (!cfg) continue;
-            try {
-              if (cfg.channel === "router") {
-                output    = await routerCall(args.system, args.prompt, model);
-                modelUsed = model;
-                break;
-              } else if (cfg.channel === "gemini_cli") {
-                const r = await execCli("gemini", args.prompt);
-                if (r.success) { output = r.output; modelUsed = model; break; }
-              } else if (cfg.channel === "copilot_cli") {
-                const r = await execCli("copilot", args.prompt);
-                if (r.success) { output = r.output; modelUsed = model; break; }
-              }
-            } catch (_) { /* try next */ }
-          }
-        }
-
-        const gate = parseReviewGate(output);
-        return {
-          content: [{
-            type: "text",
-            text: JSON.stringify({
-              task_type:       taskType,
-              model_used:       modelUsed,
-              attempted_models: attempted,
-              strategy:         modelUsed && parallelModels.includes(modelUsed) ? "parallel" : "fallback",
-              review_gate:      gate,
-              result:           output,
-              timestamp:        new Date().toISOString(),
             }, null, 2),
           }],
         };

@@ -21,6 +21,14 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 HEALTH_BEACON_SH="$SCRIPT_DIR/orch-health-beacon.sh"
 # shellcheck source=./notify-lib.sh
 [ -f "$SCRIPT_DIR/notify-lib.sh" ] && . "$SCRIPT_DIR/notify-lib.sh" || notify_event() { return 0; }
+# shellcheck source=./lib/triage-tiers.sh
+[ -f "$SCRIPT_DIR/../lib/triage-tiers.sh" ] && . "$SCRIPT_DIR/../lib/triage-tiers.sh" || true
+# shellcheck source=../lib/intent-verifier.sh
+[ -f "$SCRIPT_DIR/../lib/intent-verifier.sh" ] && . "$SCRIPT_DIR/../lib/intent-verifier.sh" || verify_spec() { echo "{}"; return 0; }
+# shellcheck source=../lib/cost-tracker.sh
+[ -f "$SCRIPT_DIR/../lib/cost-tracker.sh" ] && . "$SCRIPT_DIR/../lib/cost-tracker.sh" || cost_record() { return 0; }
+# shellcheck source=../lib/agent-failover.sh
+[ -f "$SCRIPT_DIR/../lib/agent-failover.sh" ] && . "$SCRIPT_DIR/../lib/agent-failover.sh" || failover_find_available() { return 1; }
 BATCH_DIR="${1:?Usage: task-dispatch.sh <batch-dir> [--parallel|--status]}"
 MODE="${2:---sequential}"
 # Always retry skipped/failed tasks — no flag needed
@@ -770,6 +778,30 @@ dispatch_task() {
   timeout=$(parse_front "$spec" "timeout" "120")
   retries=$(parse_front "$spec" "retries" "1")
 
+  # ── Budget-Tiered Task Triage ─────────────────────────────────────────────
+  if [ -x "$SCRIPT_DIR/classify-tokens.sh" ]; then
+    local tier_output tokens_est intent_class task_tier routing_decision
+    tier_output=$("$SCRIPT_DIR/classify-tokens.sh" "$spec" 2>/dev/null || true)
+    if [ -n "$tier_output" ]; then
+      task_tier=$(echo "$tier_output" | awk -F= '$1=="tier" {print $2}')
+      tokens_est=$(echo "$tier_output" | awk -F= '$1=="tokens_estimated" {print $2}')
+      intent_class=$(echo "$tier_output" | awk -F= '$1=="intent_clarity" {print $2}')
+      routing_decision=$(echo "$tier_output" | awk -F= '$1=="reasoning" {print $2}')
+
+      if [ -n "$task_tier" ]; then
+        echo "[dispatch] event=tier_classification tid=$tid tier=$task_tier tokens=$tokens_est intent=$intent_class routing=$routing_decision"
+        triage_log "$tid" "$task_tier" "$tokens_est" "$intent_class" "$routing_decision"
+
+        # Override timeout based on tier if not explicitly set in task spec
+        if [ -z "$(parse_front "$spec" "timeout" "")" ]; then
+          local tier_timeout
+          tier_timeout=$(triage_get_timeout "$task_tier")
+          timeout="$tier_timeout"
+        fi
+      fi
+    fi
+  fi
+
   # ── capability check ───────────────────────────────────────────────────────
   local agents_json="$PROJECT_ROOT/.orchestration/agents.json"
   if [ -f "$agents_json" ]; then
@@ -1032,6 +1064,17 @@ PYEOF
       # SLO breach check
       check_slo_breach "$tid" "$agent" "$actual_duration" "success" "$spec"
       check_budget
+
+      # Track cost (prompt_chars + output_chars estimate, 4 chars/token)
+      if declare -f cost_record > /dev/null 2>&1; then
+        local prompt_chars output_chars
+        prompt_chars=$(wc -c < "$RESULTS_DIR/${tid}.log" 2>/dev/null | tr -d ' ' || echo "0")
+        output_chars=$(wc -c < "$RESULTS_DIR/${tid}.out" 2>/dev/null | tr -d ' ' || echo "0")
+        cost_record "$agent" "$BATCH_ID" "$tid" \
+          "$(( prompt_chars / 4 ))" "$(( output_chars / 4 ))" "0" "$actual_duration" \
+          2>/dev/null || true
+      fi
+
       return 0
     fi
 
@@ -1040,6 +1083,18 @@ PYEOF
     fi
     dispatch_log_failover_event "failover_attempt" "$agent" "$failover_position" "failure"
     echo "[dispatch] ❌ $tid attempt failed on $agent (${actual_duration}s)"
+
+    # Agent failover: try picking a fallback model before giving up
+    if declare -f failover_find_available > /dev/null 2>&1; then
+      local failover_chain next_agent
+      failover_chain=$(failover_get_chain "$spec" 2>/dev/null || echo "")
+      next_agent=$(failover_find_available "$failover_chain" "$agent" 2>/dev/null || echo "")
+      if [ -n "$next_agent" ]; then
+        echo "[dispatch] ↻ Failover: retrying $tid with $next_agent" >&2
+        failover_log_swap "$tid" "$agent" "$next_agent" "agent_failover"
+        agent_candidates="$next_agent $agent_candidates"
+      fi
+    fi
   done
 
   rm -f "$pid_file"
@@ -1147,9 +1202,28 @@ dispatch_sequential() {
   # Multiple passes to handle dependencies
   local max_passes=3
   local pass=0
+
+  # ── Intent verification pass: skip specs that fail gate ────────────────────
+  local verified_specs=()
+  for spec in "${TASK_FILES[@]}"; do
+    local tid
+    tid=$(parse_front "$spec" "id" "unknown")
+    local v_output v_rec
+    v_output=$(verify_spec "$spec" 2>/dev/null || echo "{}")
+    v_rec=$(echo "$v_output" | jq -r '.recommendation // "proceed"' 2>/dev/null || echo "proceed")
+    if [ "$v_rec" = "block" ]; then
+      echo "[dispatch] ⚠ intent verification BLOCKED $tid — skipping" >&2
+      echo "$tid" >> "$DLQ_DIR/_failed_intent.txt"
+      mkdir -p "$RESULTS_DIR"
+      printf "Intent verification failed: %s\n" "$(echo "$v_output" | jq -r '.checks // []' 2>/dev/null | head -c 200)" > "$RESULTS_DIR/${tid}.skipped"
+    else
+      verified_specs+=("$spec")
+    fi
+  done
+
   while [ $pass -lt $max_passes ]; do
     local progress=false
-    for spec in "${TASK_FILES[@]}"; do
+    for spec in "${verified_specs[@]}"; do
       local tid
       tid=$(parse_front "$spec" "id" "unknown")
 
