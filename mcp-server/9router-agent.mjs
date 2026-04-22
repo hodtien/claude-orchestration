@@ -48,9 +48,20 @@ try {
 }
 
 // ── execCli helper ─────────────────────────────────────────────────────────────
-async function execCli(binary, prompt, timeoutSec = 120) {
+// Map custom model name → gemini CLI model flag
+const GEMINI_MODEL_MAP = {
+  "gemini-pro":    "gemini-2.5-pro",
+  "gemini-medium":  "gemini-2.5-flash",
+  "gemini-low":    "gemini-2.5-flash",
+};
+
+async function execCli(binary, prompt, model = null, timeoutSec = 120) {
+  const args = ["-p", prompt];
+  if (model && binary === "gemini" && GEMINI_MODEL_MAP[model]) {
+    args.push("-m", GEMINI_MODEL_MAP[model]);
+  }
   return new Promise((resolve) => {
-    const proc = spawn(binary, ["-p", prompt], { stdio: ["ignore", "pipe", "pipe"] });
+    const proc = spawn(binary, args, { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "", stderr = "";
     const timer = setTimeout(() => { proc.kill("SIGTERM"); resolve({ success: false, error: "timeout" }); }, timeoutSec * 1000);
     proc.stdout.on("data", (d) => stdout += d);
@@ -390,7 +401,7 @@ ${REVIEW_GATE_INSTRUCTION}`;
               modelUsed = model;
               break outer;
             } else if (cfg.channel === "gemini_cli") {
-              const r = await execCli("gemini", args.prompt);
+              const r = await execCli("gemini", args.prompt, model);
               if (r.success) { output = r.output; modelUsed = model; break outer; }
             } else if (cfg.channel === "copilot_cli") {
               const r = await execCli("copilot", args.prompt);
@@ -411,7 +422,7 @@ ${REVIEW_GATE_INSTRUCTION}`;
                 modelUsed = model;
                 break;
               } else if (cfg.channel === "gemini_cli") {
-                const r = await execCli("gemini", args.prompt);
+                const r = await execCli("gemini", args.prompt, model);
                 if (r.success) { output = r.output; modelUsed = model; break; }
               } else if (cfg.channel === "copilot_cli") {
                 const r = await execCli("copilot", args.prompt);

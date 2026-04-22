@@ -1,0 +1,237 @@
+# models.yaml — Task → Model mapping for Claude Orchestration
+#
+# How it works:
+#   - Claude Code is configured (via settings.json) to route through 9router at localhost:20128.
+#   - Task dispatcher reads this file to pick the right model(s) for each task type.
+#   - Two execution modes per task:
+#       * parallel: run N models simultaneously, take fastest/best (race)
+#       * fallback: tried sequentially if parallel results all fail
+#   - Tasks delegated to gemini-cli or gh copilot do NOT go through 9router —
+#     those CLIs manage their own auth/model.
+#
+# Channel prefix convention in model names:
+#   - minimax-*       → via 9router (Anthropic-compat adapter)
+#   - cc/claude-*     → via 9router targeting Claude API
+#   - gh/gpt-*        → via gh copilot CLI (shell exec)
+#   - gemini-*        → via gemini-cli (shell exec)
+#
+# Philosophy:
+#   - Prefer cheap model first (minimax, haiku).
+#   - Run PARALLEL when multiple cheap/medium models could solve it —
+#     race for speed, compare quality.
+#   - Reserve Opus for truly large/complex design work.
+
+# ── Channels ──────────────────────────────────────────────────────────────────
+channels:
+  router:
+    # Goes through 9router proxy (Anthropic-compatible API)
+    base_url: http://localhost:20128
+    auth_env: ANTHROPIC_API_KEY
+    prefix: cc/                     # cc/claude-sonnet-4-6, cc/claude-haiku-4-5
+    also_serves: [minimax-code]     # 9router also exposes minimax under Anthropic-compat
+  gemini_cli:
+    binary: gemini
+    prefix: ""                       # gemini-2.5-pro
+  copilot_cli:
+    binary: copilot
+    prefix: gh/                      # gh/gpt-5.3-codex
+
+# ── Models available ─────────────────────────────────────────────────────────
+models:
+  # Via 9router (Claude accounts load-balanced)
+  cc/claude-sonnet-4-6:
+    channel: router
+    tier: premium
+    cost_hint: high
+
+  cc/claude-sonnet-4-5:
+    channel: router
+    tier: premium
+    cost_hint: high
+
+  cc/claude-opus-4-6:
+    channel: router
+    tier: ultra
+    cost_hint: very-high
+
+  cc/claude-haiku-4-5:
+    channel: router
+    tier: fast
+    cost_hint: low
+
+  # Via 9router (Minimax under Anthropic-compat)
+  minimax-code:
+    channel: router
+    tier: cheap
+    strengths: [code, draft, fast]
+    cost_hint: medium-low
+
+  # Via gh copilot CLI
+  gh/gpt-5.3-codex:
+    channel: copilot_cli
+    tier: code-review
+    strengths: [code, code-review, ui-ux, repo-aware]
+    cost_hint: medium
+
+  gh/claude-haiku-4-5:
+    # gh copilot also exposes Claude Haiku — use when gh auth is the available one
+    channel: copilot_cli
+    tier: fast
+    cost_hint: low
+
+  # Via gemini CLI
+  gemini-2.5-pro:
+    channel: gemini_cli
+    tier: analysis
+    strengths: [long-context, 1M-tokens]
+    cost_hint: medium
+
+  gemini-2.5-flash:
+    channel: gemini_cli
+    tier: fast-analysis
+    cost_hint: low
+
+  # Custom models (gemini-cli manages model selection internally)
+  # gemini-pro: opus/sonnet-level — architecture, design, BA analysis
+  gemini-pro:
+    channel: gemini_cli
+    tier: premium
+    strengths: [architecture, system-design, requirements, deep-reasoning]
+    cost_hint: medium-high
+    note: "Maps to gemini-2.5-pro in gemini-cli config"
+
+  # gemini-medium: coding — implement, fix, refactor, review, write tests
+  gemini-medium:
+    channel: gemini_cli
+    tier: medium
+    strengths: [code, refactor, review, tests, implementation]
+    cost_hint: medium-low
+    note: "Maps to gemini-2.5-flash or configurable in gemini-cli"
+
+  # gemini-low: quick tasks — quick_answer, summarize, classify
+  gemini-low:
+    channel: gemini_cli
+    tier: fast
+    strengths: [quick-answer, summarize, classify]
+    cost_hint: low
+    note: "Maps to fastest available in gemini-cli"
+
+# ── Task Type → Model Mapping ─────────────────────────────────────────────────
+# Two-tier strategy:
+#   - parallel: models run simultaneously. Dispatcher picks first success
+#     (or runs consensus vote via lib/consensus-vote.sh if ≥2 succeed).
+#   - fallback: tried in order only if ALL parallel models failed.
+#
+# Rationale column explains the thinking for your own reference.
+
+task_mapping:
+
+  # 1 ── Quick answer / summarize / classify ──────────────────────────────────
+  quick_answer:
+    parallel: [gemini-low, minimax-code]
+    fallback: [cc/claude-haiku-4-5]
+    rationale: "gemini-low handles fast classification; minimax as backup."
+
+  summarize:
+    parallel: [gemini-low, minimax-code]
+    fallback: [cc/claude-haiku-4-5]
+
+  classify_intent:
+    parallel: [gemini-low, minimax-code]
+    fallback: [cc/claude-haiku-4-5]
+
+  # 2 ── Code implementation / refactor ──────────────────────────────────────
+  implement_feature:
+    parallel: [gemini-medium, gh/gpt-5.3-codex]
+    fallback: [cc/claude-sonnet-4-6, cc/claude-opus-4-6]
+    rationale: "gemini-medium for coding; copilot for repo context; Claude premium as safety net."
+
+  fix_bug:
+    parallel: [gemini-medium, gh/gpt-5.3-codex]
+    fallback: [cc/claude-sonnet-4-6, cc/claude-opus-4-6]
+
+  refactor_code:
+    parallel: [gemini-medium, gh/gpt-5.3-codex]
+    fallback: [cc/claude-sonnet-4-6, cc/claude-opus-4-6]
+
+  # 3 ── Tests ────────────────────────────────────────────────────────────────
+  write_tests:
+    parallel: [gemini-medium, gh/gpt-5.3-codex]
+    fallback: [cc/claude-sonnet-4-5, cc/claude-sonnet-4-6]
+    rationale: "gemini-medium handles test generation; copilot for repo-aware tests."
+
+  # 4 ── Code review & UI/UX ─────────────────────────────────────────────────
+  code_review:
+    parallel: [gemini-medium, gh/gpt-5.3-codex]
+    fallback: [cc/claude-sonnet-4-6]
+    rationale: "gemini-medium for review; copilot for repo context."
+
+  ui_ux_review:
+    parallel: [gemini-medium, gh/gpt-5.3-codex]
+    fallback: [cc/claude-sonnet-4-6]
+
+  # 5 ── Architecture analysis / security audit ──────────────────────────────
+  architecture_analysis:
+    parallel: [gemini-pro]
+    fallback: [cc/claude-opus-4-6, cc/claude-sonnet-4-6]
+    rationale: "gemini-pro for deep architecture reasoning; Claude Opus as premium backup."
+
+  security_audit:
+    parallel: [gemini-pro]
+    fallback: [cc/claude-opus-4-6, cc/claude-sonnet-4-6]
+
+  # 6 ── Requirements / BA ───────────────────────────────────────────────────
+  analyze_requirements:
+    parallel: [gemini-pro]
+    fallback: [cc/claude-sonnet-4-6, cc/claude-opus-4-6]
+    rationale: "gemini-pro handles requirements analysis; Claude premium as safety net."
+
+  create_user_stories:
+    parallel: [gemini-pro]
+    fallback: [cc/claude-sonnet-4-6]
+
+  # 7 ── API design (module level) ──────────────────────────────────────────
+  design_api:
+    parallel: [gemini-pro, cc/claude-sonnet-4-6]
+    fallback: [cc/claude-opus-4-6]
+    rationale: "gemini-pro for API design; Claude Sonnet as parallel option."
+
+  # 8 ── System design (whole architecture) ─────────────────────────────────
+  system_design:
+    parallel: [gemini-pro]
+    fallback: [cc/claude-opus-4-6, cc/claude-sonnet-4-6]
+    rationale: "gemini-pro for whole-system design; Claude Opus as premium backup."
+
+  # ── Ops / DevOps ───────────────────────────────────────────────────────────────
+  write_dockerfile:
+    parallel: [gemini-medium, cc/claude-sonnet-4-5]
+    fallback: [cc/claude-sonnet-4-6]
+
+  setup_ci_cd:
+    parallel: [gemini-medium, cc/claude-sonnet-4-6]
+    fallback: [cc/claude-sonnet-4-5]
+
+  # ── Default ────────────────────────────────────────────────────────────────
+  default:
+    parallel: [gemini-low]
+    fallback: [cc/claude-haiku-4-5, cc/claude-sonnet-4-5]
+
+# ── Parallel execution policy ────────────────────────────────────────────────
+parallel_policy:
+  # What to do when N models in `parallel` all return successfully:
+  pick_strategy: first_success       # Options: first_success | consensus | longest | shortest
+  # first_success = fastest wins, cancel others (saves cost)
+  # consensus     = wait for all, use lib/consensus-vote.sh to merge
+  # longest/shortest = pick by output length
+
+  max_parallel: 3                    # Never run more than N simultaneously per task
+  cancel_slower_on_first_success: true
+  timeout_per_model_sec: 120
+
+# ── Router hints (sent to 9router) ───────────────────────────────────────────
+router_hints:
+  round_robin_accounts: true         # 9router has multiple Claude accounts
+  respect_quota: true                # Skip accounts near rate-limit
+  prefer_cheaper_on_tie: true
+  circuit_breaker_threshold: 3
+  circuit_breaker_cooldown_sec: 60
