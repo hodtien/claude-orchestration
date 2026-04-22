@@ -5,7 +5,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-AGENTS_JSON="$PROJECT_ROOT/config/agents.json"
+AGENTS_JSON="${AGENTS_JSON:-$PROJECT_ROOT/config/agents.json}"
 COST_LIB="$PROJECT_ROOT/lib/cost-tracker.sh"
 
 # Source cost tracker if available
@@ -14,14 +14,33 @@ if [ -f "$COST_LIB" ]; then
     . "$COST_LIB"
 fi
 
+# Warn if agents.json is missing (non-fatal — falls back to built-in estimates)
+if [ ! -f "$AGENTS_JSON" ]; then
+    echo "[cost] Warning: $AGENTS_JSON not found — using built-in cost estimates" >&2
+fi
+
 # ── Color helpers (compatible with orch-cost-dashboard.sh) ─────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'
 BLUE='\033[0;34m'; CYAN='\033[0;36m'; BOLD='\033[1m'; RESET='\033[0m'
 
+# Built-in fallback estimates (used when agents.json is missing)
+# Format: "name\ttier\tcost_per_1k"
+BUILTIN_AGENTS='minimax-code	1	0.001
+gemlow	1	0.0005
+cc/claude-haiku-4-5	2	0.00125
+gemini-flash	2	0.0006
+gemmed	3	0.002
+cc/claude-sonnet-4-5	3	0.003
+gh/gpt-5.3-codex	3	0.003
+gempro	4	0.0025
+cc/claude-sonnet-4-6	4	0.0035
+gemini-pro	4	0.0025
+cc/claude-opus-4-6	5	0.015'
+
 # ── list ──────────────────────────────────────────────────────────────────
 do_list() {
-  [ -f "$AGENTS_JSON" ] || { echo "agents.json not found: $AGENTS_JSON" >&2; exit 1; }
-  python3 - "$AGENTS_JSON" <<'PYEOF'
+  if [ -f "$AGENTS_JSON" ]; then
+    python3 - "$AGENTS_JSON" <<'PYEOF'
 import json, sys
 with open(sys.argv[1], encoding="utf-8") as f:
     agents = json.load(f).get("agents", {})
@@ -33,25 +52,43 @@ for name, info in agents.items():
 for tier, name, cost in sorted(rows, key=lambda x: (x[0], x[1])):
     print(f"{name}\t{tier}\t{cost}")
 PYEOF
+  else
+    printf '%s\n' "$BUILTIN_AGENTS"
+  fi
 }
 
 # ── estimate ───────────────────────────────────────────────────────────────
 do_estimate() {
   local agent="$1" tokens="$2"
-  [ -f "$AGENTS_JSON" ] || { echo "agents.json not found: $AGENTS_JSON" >&2; exit 1; }
-  python3 - "$AGENTS_JSON" "$agent" "$tokens" <<'PYEOF'
+  local cost_per_1k="0"
+
+  if [ -f "$AGENTS_JSON" ]; then
+    cost_per_1k=$(python3 - "$AGENTS_JSON" "$agent" <<'PYEOF'
 import json, sys
 with open(sys.argv[1], encoding="utf-8") as f:
     agents = json.load(f).get("agents", {})
-cost = float(agents.get(sys.argv[2], {}).get("cost_per_1k_tokens", 0))
-tokens = float(sys.argv[3])
+cost = agents.get(sys.argv[2], {}).get("cost_per_1k_tokens", 0)
+print(cost)
+PYEOF
+)
+  else
+    cost_per_1k=$(printf '%s\n' "$BUILTIN_AGENTS" | awk -F'\t' -v a="$agent" '$1 == a {print $3}' | head -1)
+    [ -z "$cost_per_1k" ] && cost_per_1k="0"
+  fi
+
+  echo "$(python3 - "$cost_per_1k" "$tokens" <<'PYEOF'
+import sys
+cost = float(sys.argv[1])
+tokens = float(sys.argv[2])
 print(f"{(tokens / 1000.0) * cost:.6f}")
 PYEOF
+)"
 }
 
-# ── cheapest ──────────────────────────────────────────────────────────────
+# ── cheapest ───────────────────────────────────────────────────────────────
 do_capable() {
-  python3 - "$AGENTS_JSON" "$1" <<'PYEOF'
+  if [ -f "$AGENTS_JSON" ]; then
+    python3 - "$AGENTS_JSON" "$1" <<'PYEOF'
 import json, sys
 task_type = sys.argv[2].strip().lower()
 with open(sys.argv[1], encoding="utf-8") as f:
@@ -65,6 +102,10 @@ for name, info in agents.items():
 for _, name in sorted(rows, key=lambda x: (x[0], x[1])):
     print(name)
 PYEOF
+  else
+    # No file — can't match capabilities, return cheapest tier-1 agent
+    printf '%s\n' "$BUILTIN_AGENTS" | awk -F'\t' 'NR==1 {print $1}'
+  fi
 }
 
 do_cheapest() {
@@ -103,7 +144,7 @@ do_dashboard() {
 
   total=$(echo "$total" | bc -l 2>/dev/null || echo "0")
   today_cost=$(echo "$budget_status" | jq -r '.today_cost // 0' 2>/dev/null || echo "0")
-  today_budget=$(echo "$budget_status" | jq -r '.today_budget // 25' 2>/dev/null || echo "25")
+  today_budget=$(echo "$budget_status" | jq -r '.daily_budget // 25' 2>/dev/null || echo "25")
   today_pct=$(echo "$budget_status" | jq -r '.today_pct // 0' 2>/dev/null || echo "0")
   monthly_proj=$(echo "$budget_status" | jq -r '.monthly_projected // 0' 2>/dev/null || echo "0")
   monthly_budget=$(echo "$budget_status" | jq -r '.monthly_budget // 100' 2>/dev/null || echo "100")
@@ -127,6 +168,8 @@ case "${1:-}" in
   list|estimate|cheapest|dashboard) ;;
   -h|--help|"")
     echo "Usage: cost list|estimate <agent> <tokens>|cheapest <task_type>|dashboard [--once]"
+    echo ""
+    echo "Requires: config/agents.json (auto-created if missing; uses built-in estimates)"
     exit 0 ;;
   *) echo "Unknown cost subcommand: $1" >&2; exit 2 ;;
 esac

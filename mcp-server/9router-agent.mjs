@@ -246,7 +246,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             description: "One of: quick_answer, summarize, classify_intent, implement_feature, fix_bug, " +
               "refactor_code, write_tests, code_review, ui_ux_review, architecture_analysis, " +
               "security_audit, analyze_requirements, create_user_stories, design_api, system_design, " +
-              "write_dockerfile, setup_ci_cd, default",
+              "write_dockerfile, setup_ci_cd, repo_analysis, default",
           },
           prompt:  { type: "string", description: "The actual task prompt" },
           system:  { type: "string", description: "Optional system prompt override" },

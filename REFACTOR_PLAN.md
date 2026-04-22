@@ -118,9 +118,9 @@ Three hooks (using existing lib/ code):
 | 3 | Delete orphan scripts | Low (reversible via git) | bin/ has ~30 scripts |
 | 4 | Consolidate metrics → orch-dashboard.sh | Medium | old commands still work as thin aliases |
 | 5 | Write setup-router.sh | Low | settings.json can be set/reverted |
-| 6 | Wire intent/cost/failover into task-dispatch | Medium | dry-run dispatch still works |
+| 6 | Wire intent/cost/failover into task-dispatch | Medium | --status dispatch still works |
 | 7 | Rewrite CLAUDE.md for 2-mode arch | Low | CLAUDE.md reflects reality |
-| 8 | Verify: orch-health + dry-run dispatch | Low | All green |
+| 8 | Verify: orch-health + --status dispatch | Low | All green |
 
 ---
 

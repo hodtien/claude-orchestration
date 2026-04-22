@@ -1,0 +1,74 @@
+{
+  "agents": {
+    "minimax-code": {
+      "cost_tier": 1,
+      "cost_per_1k_tokens": 0.001,
+      "capabilities": ["code", "draft", "fast"],
+      "channel": "router"
+    },
+    "gemlow": {
+      "cost_tier": 1,
+      "cost_per_1k_tokens": 0.0005,
+      "capabilities": ["quick-answer", "summarize", "classify"],
+      "channel": "router",
+      "note": "Maps to gemini-2.5-flash"
+    },
+    "cc/claude-haiku-4-5": {
+      "cost_tier": 2,
+      "cost_per_1k_tokens": 0.00125,
+      "capabilities": ["code", "review", "fast"],
+      "channel": "router"
+    },
+    "gemini-flash": {
+      "cost_tier": 2,
+      "cost_per_1k_tokens": 0.0006,
+      "capabilities": ["fast-analysis", "quick-answer"],
+      "channel": "gemini_cli"
+    },
+    "gemmed": {
+      "cost_tier": 3,
+      "cost_per_1k_tokens": 0.002,
+      "capabilities": ["code", "refactor", "review", "tests", "implementation"],
+      "channel": "router",
+      "note": "Maps to gemini-2.5-flash"
+    },
+    "cc/claude-sonnet-4-5": {
+      "cost_tier": 3,
+      "cost_per_1k_tokens": 0.003,
+      "capabilities": ["code", "analysis", "review"],
+      "channel": "router"
+    },
+    "gh/gpt-5.3-codex": {
+      "cost_tier": 3,
+      "cost_per_1k_tokens": 0.003,
+      "capabilities": ["code", "code-review", "ui-ux", "repo-aware"],
+      "channel": "copilot_cli"
+    },
+    "gempro": {
+      "cost_tier": 4,
+      "cost_per_1k_tokens": 0.0025,
+      "capabilities": ["architecture", "system-design", "requirements", "deep-reasoning"],
+      "channel": "router",
+      "note": "Maps to gemini-2.5-pro"
+    },
+    "cc/claude-sonnet-4-6": {
+      "cost_tier": 4,
+      "cost_per_1k_tokens": 0.0035,
+      "capabilities": ["code", "analysis", "architecture", "security"],
+      "channel": "router"
+    },
+    "gemini-pro": {
+      "cost_tier": 4,
+      "cost_per_1k_tokens": 0.0025,
+      "capabilities": ["long-context", "analysis", "architecture", "requirements"],
+      "channel": "gemini_cli",
+      "note": "1M-token context — for repo_analysis task type only"
+    },
+    "cc/claude-opus-4-6": {
+      "cost_tier": 5,
+      "cost_per_1k_tokens": 0.015,
+      "capabilities": ["deep-reasoning", "architecture", "complex-analysis"],
+      "channel": "router"
+    }
+  }
+}

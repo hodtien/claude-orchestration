@@ -50,8 +50,9 @@ Subagent channels (Claude delegates mid-session via these):
 - [x] README.md: removed `beeknoee` references, added new agents table
 - [x] CLAUDE.md line ~320: removed `workflows/` reference, added `bin/deprecated/` and `config/`
 
-**Remaining tasks (this handoff):** 6 tasks below, designed to be done in order.
+**Remaining tasks (this handoff):** 10 tasks below, designed to be done in order.
 Tasks 1 and 2 are independent and can run in parallel.
+Tasks 7-10 can run independently of Tasks 1-6 (they are documentation/audit fixes).
 
 ---
 
@@ -436,7 +437,7 @@ Expected hook points (verify in the actual code):
 
 ### Acceptance criteria
 
-- [ ] Run `bin/task-dispatch.sh --dry-run .orchestration/tasks/<any-existing-batch>` succeeds
+- [ ] Run `bin/task-dispatch.sh .orchestration/tasks/<batch> --status` (shows status without dispatching)
 - [ ] Grep confirms 3 new `source "..../lib/..."` lines in task-dispatch.sh
 - [ ] When intent-verifier returns failure, task is skipped (not dispatched)
 - [ ] When cost-tracker runs, a new row appears in `.orchestration/metrics.db` (or its flat-file equivalent)
@@ -539,7 +540,7 @@ Expected hook points (verify in the actual code):
 3. **Dry-run dispatch:**
    ```bash
    # Pick any existing batch from .orchestration/tasks/
-   bin/task-dispatch.sh --dry-run .orchestration/tasks/<some-batch>/
+   bin/task-dispatch.sh --status .orchestration/tasks/<some-batch>/
    ```
    Expect: prints planned dispatches, no errors, intent-verifier lines visible.
 
@@ -622,7 +623,265 @@ All changes are on a branch — nothing committed to master until user reviews.
 - [ ] Task 1: `route_task` MCP tool implemented + tested
 - [ ] Task 2: `orch-dashboard.sh` consolidates 6 metrics scripts
 - [ ] Task 3: `setup-router.sh` works (apply/revert/status)
-- [ ] Task 4: 3 lib hooks wired into task-dispatch.sh, dry-run still works
+- [ ] Task 4: 3 lib hooks wired into task-dispatch.sh, --status still works
 - [ ] Task 5: CLAUDE.md rewritten, 2 modes, softened rules
 - [ ] Task 6: Verified, committed on branch `refactor/multi-model-router`
+- [ ] Task 7: config/models.yaml cleanup (5 consistency issues fixed)
+- [x] Task 8: plan.txt → PHASE5_IDEAS.md, "Completed" replaced with accurate status table
+- [x] Task 9: lib/ audit report at docs/archive/LIB_AUDIT_2026-04-22.md
+- [x] Task 10: repo_analysis task_type added (gemini-pro → 1M context)
 - [ ] Report deviations from plan (if any)
+
+---
+
+## Task 7 — Fix `config/models.yaml` (5 consistency issues after user edit)
+
+**File:** `config/models.yaml`
+**Estimated effort:** ~20 lines of edits
+
+### Context
+
+User added three custom-named router models (`gempro`, `gemmed`, `gemlow`) that go
+through 9router instead of gemini-cli. This is intentional and correct, but it left
+5 consistency issues that need fixing.
+
+### Fixes required
+
+**7.1 — Orphan models in declarations**
+Lines 82-92 declare `gemini-pro` and `gemini-flash` with `channel: gemini_cli`, but
+nothing in `task_mapping` uses them anymore. Two options:
+- (A) **Delete** both declarations if gemini-cli is no longer used at all
+- (B) **Keep** them + add a new `repo_analysis` task_type that actually uses them (see Task 10)
+
+**Decide with user. If unclear, default to (B) because gemini-cli's 1M-token long-context
+is genuinely unique and router-hosted gemini may not expose it.**
+
+**7.2 — Header comment mismatch**
+Lines 9-10 currently say:
+```
+- Tasks delegated to gemini-cli or gh copilot do NOT go through 9router —
+  those CLIs manage their own auth/model.
+```
+This is now half-wrong: `gh copilot` still manages its own; but `gempro/gemmed/gemlow`
+DO go through 9router. Rewrite to:
+```
+- `gh copilot` CLI (for gh/gpt-5.3-codex, gh/claude-haiku-4-5) does NOT go through
+  9router — it manages its own auth/model.
+- `gemini-cli` is used only when a task explicitly needs 1M-token long context
+  (see repo_analysis); gemini-pro/gemini-flash are the only models on that channel.
+- All other models, including `gempro/gemmed/gemlow`, go through 9router.
+```
+
+**7.3 — Naming convention inconsistency**
+Lines 13-16 say: `gemini-* → via gemini-cli`. But `gempro/gemmed/gemlow` don't have
+`gemini-` prefix and they're NOT via gemini-cli. Fix one of two ways:
+
+- Option A (preferred): update the comment to:
+  ```
+  - minimax-*          → via 9router (Anthropic-compat adapter)
+  - cc/claude-*        → via 9router targeting Claude API
+  - gempro/gemmed/gemlow → via 9router (custom Gemini routing aliases)
+  - gh/*               → via gh copilot CLI (shell exec)
+  - gemini-pro/gemini-flash → via gemini-cli (ONLY for 1M-token long context)
+  ```
+- Option B: rename `gempro/gemmed/gemlow` to `router-gempro/router-gemmed/router-gemlow`
+  (more verbose but self-explanatory). This requires updating all 15+ refs in
+  task_mapping.
+
+**Recommend A — it's simpler and the names are already short/memorable.**
+
+**7.4 — minimax-code cost_hint changed**
+Line 67: `cost_hint: medium-low` (was `very-low` in v1). Check with user that this
+is intentional. If Minimax is truly cheaper than Haiku, revert to `very-low`. If
+pricing is comparable to Haiku, keep `medium-low`. Leave a one-line comment explaining.
+
+**7.5 — Dangling `gh/claude-haiku-4-5`**
+Line 76-80 declares this model but no task uses it. Two options:
+- Add it to `quick_answer.parallel` or `summarize.parallel` alongside minimax-code
+  and gemlow (as another cheap option for racing)
+- Delete the declaration
+
+**Recommend: add to quick_answer / summarize / classify_intent parallel. More racers
+= more resilience + user already has gh auth configured.**
+
+### Acceptance
+
+- [ ] `grep -c "gemini-pro\|gemini-flash" config/models.yaml` matches decision (0 if deleted, ≥2 if kept with repo_analysis)
+- [ ] Header comment accurately describes channel routing for all model families
+- [ ] Every model declared in `models:` is used in at least one `task_mapping:` entry (no orphan declarations)
+- [ ] `yaml.safe_load(open('config/models.yaml'))` parses successfully (run with Python or node)
+
+---
+
+## Task 8 — Rewrite `plan.txt` → `PHASE5_IDEAS.md`
+
+**Move:** `plan.txt` → `PHASE5_IDEAS.md` (project root)
+**Estimated effort:** ~30 lines edited, duplicate content removed
+
+### Context
+
+Current `plan.txt` claims 10 Phase 5 features "Completed (2026-04-22)" but audit shows:
+- `bin/agent-swap.sh`, `lib/agent-failover.sh` → code exists, **not wired into task-dispatch.sh**
+- `lib/intent-verifier.sh` → code exists, **not wired**
+- `lib/context-compressor.sh` → code exists, **not wired**
+- `bin/decompose.sh`, `bin/intent-detect.sh` → **moved to bin/deprecated/**
+- `bin/learn-from-batch.sh`, `bin/routing-advisor.sh` → **moved to bin/deprecated/**
+- `bin/share-learnings.sh`, `bin/transfer-context.sh` → **moved to bin/deprecated/**
+- `bin/sprint-manager.sh`, `bin/parallel-run.sh` → **moved to bin/deprecated/**
+
+Calling these "Completed" is misleading. The goal of this rewrite: tell the truth
+about wiring status so future refactor decisions are informed.
+
+### What to change
+
+1. **Rename** `plan.txt` → `PHASE5_IDEAS.md`. The file is ideas, not a commitment plan.
+2. **Remove duplicate content** at lines 148-161 (the same 10 items repeated in a second format).
+3. **Replace "Phase 5 Completed" section** (lines 128-138) with a status table:
+
+   ```markdown
+   ## Phase 5 — Code Drafted, Wiring Status
+
+   Code for these features exists in `lib/` or `bin/`, but whether they're
+   actually integrated into the main flow (`bin/task-dispatch.sh`) varies.
+
+   | Feature | Code Location | Status | Notes |
+   |---|---|---|---|
+   | Agent Swap Protocol | `lib/agent-failover.sh`, `bin/agent-swap.sh` | Drafted, not wired | Planned in refactor Task 4 |
+   | Real-Time Cost Dashboard | `lib/cost-tracker.sh`, `bin/orch-cost-dashboard.sh` | Drafted, not wired | Planned in refactor Task 2+4 |
+   | Scheduled Runners | `bin/orch-scheduler.sh`, `bin/scheduled-run.sh` | Drafted | Cron infra exists; no production use yet |
+   | Self-Healing DAG | `lib/dag-healer.sh` | Drafted, not wired | Would need explicit wiring in task-dispatch |
+   | Intent Verification | `lib/intent-verifier.sh` | Drafted, not wired | Planned in refactor Task 4 |
+   | Context Compression | `lib/context-compressor.sh` | Drafted, not wired | No call site in dispatch |
+   | Task Decomposer | `lib/task-decomposer.sh` + bin helpers | **Deprecated** | bin scripts moved to bin/deprecated/; lib orphan |
+   | Autonomous Learning | `lib/learning-engine.sh` + bin helpers | **Deprecated** | bin scripts moved; not enough data to learn from yet |
+   | Cross-Project Transfer | `lib/cross-project.sh` + bin helpers | **Deprecated** | bin scripts moved; solo-dev use case doesn't need this |
+   | Parallel Sprint | `lib/sprint-queue.sh` + bin helpers | **Deprecated** | bin scripts moved; complexity exceeds solo-dev need |
+   ```
+
+4. **Add** a short "Wiring Priority" section:
+
+   ```markdown
+   ## Wiring Priority (active work)
+
+   Ordered by impact for solo-dev:
+   1. Agent Failover — wire lib/agent-failover.sh into task-dispatch.sh
+   2. Cost Tracker — wire lib/cost-tracker.sh into task-dispatch.sh
+   3. Intent Verifier — wire lib/intent-verifier.sh into task-dispatch.sh
+   4. (Everything else — reconsider after 1 month of real usage)
+   ```
+
+5. **Keep** the 10 "Next-Generation Orchestration Features" section as forward-looking
+   ideas with the heading: `## Future Feature Ideas (not yet code)` — but add a note
+   at the top: "These are concepts. Only add the code if there's a real need; don't
+   pre-build features that sit unwired."
+
+### Acceptance
+
+- [ ] File renamed to `PHASE5_IDEAS.md`
+- [ ] `grep "Completed" PHASE5_IDEAS.md` returns 0 (only use "Drafted" / "Wired" / "Deprecated")
+- [ ] Status table is accurate — verify each row by `ls bin/deprecated/` and `grep "source.*lib/" bin/task-dispatch.sh`
+- [ ] Duplicate content at old lines 148-161 is gone
+- [ ] Old `plan.txt` deleted (or git mv → rename)
+
+---
+
+## Task 9 — Audit `lib/` usage
+
+**New file:** `docs/archive/LIB_AUDIT_2026-04-22.md`
+**Estimated effort:** 1 script run + ~30 min writing
+
+### Why
+
+16 files in `lib/` = ~3,000 lines. Many may be orphan (declared but unused).
+Before Task 4 (wiring), user needs to know which libs are genuinely useful vs
+which ones to shelve.
+
+### Procedure
+
+1. Run this audit script and capture output:
+   ```bash
+   cd ~/claude-orchestration
+   for lib in lib/*.sh; do
+     name=$(basename "$lib")
+     # Find files that source or call this lib
+     callers=$(grep -rl "$name" bin/ mcp-server/ commands/ skills/ CLAUDE.md 2>/dev/null | grep -v "^$lib$" | head -5 | tr '\n' ',' | sed 's/,$//')
+     linecount=$(wc -l < "$lib")
+     echo "| $name | $linecount | ${callers:-NONE} |"
+   done
+   ```
+
+2. Classify each lib:
+   - **wired**: actively called by task-dispatch.sh or an active script
+   - **orphan**: declared but no caller
+   - **ref-only**: only referenced in docs/md, not in code
+   - **helper**: used by other libs (internal helper)
+
+3. For each orphan, recommend:
+   - `wire` — candidate for wiring into task-dispatch.sh (Task 4 extension)
+   - `move-to-deprecated` — unlikely to be wired; move to `lib/deprecated/`
+   - `keep-as-lib` — useful future tool, keep in place but document
+
+### Deliverable format
+
+Write `docs/archive/LIB_AUDIT_2026-04-22.md`:
+
+```markdown
+# lib/ Audit — 2026-04-22
+
+## Summary
+- Total libs: 16
+- Wired: <N>
+- Orphan: <N>
+- Recommendation: move <N> to lib/deprecated/, wire <N>
+
+## Detailed table
+
+| Lib | Lines | Called by | Status | Recommendation |
+|---|---|---|---|---|
+| agent-failover.sh | 150 | NONE | orphan | wire (Task 4) |
+| cost-tracker.sh | 215 | NONE | orphan | wire (Task 4) |
+| intent-verifier.sh | 184 | NONE | orphan | wire (Task 4) |
+| consensus-vote.sh | ? | ? | ? | ? |
+| context-compressor.sh | 192 | NONE | orphan | keep-as-lib |
+| ...
+```
+
+### Acceptance
+
+- [ ] File `docs/archive/LIB_AUDIT_2026-04-22.md` exists
+- [ ] All 16 libs present in table (use `ls lib/*.sh | wc -l` to cross-check)
+- [ ] Each lib has a concrete recommendation
+- [ ] Report handed back to user — user decides which to wire / shelve / keep
+
+---
+
+## Task 10 — Conditional: Add `repo_analysis` task_type
+
+**File to edit:** `config/models.yaml`
+**Prerequisite:** Task 7 chose to KEEP `gemini-pro` / `gemini-flash` (option B)
+**If Task 7 deleted them, SKIP this task.**
+
+### Why
+
+`gemini-cli` with `gemini-2.5-pro` has 1M-token context — it can read a whole
+mid-size repo in one shot. Router-hosted gemini may not expose that. There's one
+task that genuinely needs this: whole-repo analysis / cross-file refactor planning.
+
+### Add to `task_mapping:`
+
+```yaml
+  # 9 ── Whole-repo analysis (only gemini-cli has 1M context) ────────────────
+  repo_analysis:
+    parallel: [gemini-pro]
+    fallback: [cc/claude-opus-4-6, cc/claude-sonnet-4-6]
+    rationale: "1M-token context — feed whole repo. Router-hosted models can't match."
+    channel_override: gemini_cli   # force gemini-cli, don't try router
+```
+
+Also update `CLAUDE.md` (in Task 5) to mention this task_type for whole-repo queries.
+
+### Acceptance
+
+- [ ] `repo_analysis` entry exists in `task_mapping:`
+- [ ] Parses successfully
+- [ ] README or CLAUDE.md explains when to use it ("use this for whole-repo analysis; for single-module work, use architecture_analysis")

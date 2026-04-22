@@ -34,8 +34,6 @@ Best for: one-off tasks, ambiguous scope, when you want to iterate with the suba
 
 ---
 
-## MCP Servers Available
-
 ## MCP Servers
 
 | Server | Role |
@@ -121,8 +119,6 @@ Task spec format: see `templates/task-spec.example.md`
 
 ---
 
-## Agent Routing Rules
-
 ## Routing
 
 **Single source of truth:** `config/models.yaml` (task_type → model mapping with parallel/fallback).
@@ -133,6 +129,7 @@ Task spec format: see `templates/task-spec.example.md`
 | Implement feature / fix bug | `route_task("implement_feature", prompt)` |
 | Code review | `route_task("code_review", prompt)` |
 | Architecture / security audit | `route_task("architecture_analysis", prompt)` |
+| Whole-repo analysis (1M context) | `route_task("repo_analysis", prompt)` |
 | Long-context analysis | `gemini-cli` or Agent tool |
 | Repo-aware code work | `copilot CLI` or Agent tool |
 | ≥2 parallel tasks | Write task specs → `task-dispatch.sh --parallel` |

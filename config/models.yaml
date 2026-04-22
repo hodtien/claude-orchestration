@@ -80,37 +80,37 @@ models:
     cost_hint: low
 
   # Via gemini CLI
-  gemini-2.5-pro:
+  gemini-pro:
     channel: gemini_cli
     tier: analysis
     strengths: [long-context, 1M-tokens]
     cost_hint: medium
 
-  gemini-2.5-flash:
+  gemini-flash:
     channel: gemini_cli
     tier: fast-analysis
     cost_hint: low
 
   # Custom models (gemini-cli manages model selection internally)
   # gemini-pro: opus/sonnet-level — architecture, design, BA analysis
-  gemini-pro:
-    channel: gemini_cli
+  gempro:
+    channel: router
     tier: premium
     strengths: [architecture, system-design, requirements, deep-reasoning]
     cost_hint: medium-high
     note: "Maps to gemini-2.5-pro in gemini-cli config"
 
   # gemini-medium: coding — implement, fix, refactor, review, write tests
-  gemini-medium:
-    channel: gemini_cli
+  gemmed:
+    channel: router
     tier: medium
     strengths: [code, refactor, review, tests, implementation]
     cost_hint: medium-low
     note: "Maps to gemini-2.5-flash or configurable in gemini-cli"
 
   # gemini-low: quick tasks — quick_answer, summarize, classify
-  gemini-low:
-    channel: gemini_cli
+  gemlow:
+    channel: router
     tier: fast
     strengths: [quick-answer, summarize, classify]
     cost_hint: low
@@ -210,6 +210,12 @@ task_mapping:
   setup_ci_cd:
     parallel: [gemini-medium, cc/claude-sonnet-4-6]
     fallback: [cc/claude-sonnet-4-5]
+
+  # 9 ── Whole-repo analysis (gemini-cli only — 1M token context) ───────────
+  repo_analysis:
+    parallel: [gemini-pro]
+    fallback: [cc/claude-opus-4-6, cc/claude-sonnet-4-6]
+    rationale: "1M-token context — feed whole repo. Router-hosted models can't match."
 
   # ── Default ────────────────────────────────────────────────────────────────
   default:
