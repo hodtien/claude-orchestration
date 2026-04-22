@@ -1,4 +1,28 @@
 node_modules/
 .DS_Store
 *.log
+
+# Orchestration generated files (keep templates/specs in repo)
+.orchestration/tasks.jsonl
+.orchestration/results/
+.orchestration/inbox/
+.orchestration/dlq/
+.orchestration/circuit-breaker.json*
+.orchestration/agent-load.json*
+.orchestration/notifications.log
+.orchestration/report*.html
+.orchestration/metrics.db
 .orchestration/pids/
+.orchestration/scheduled-tasks/
+
+# Keep versioned
+!.orchestration/templates/
+!.orchestration/tasks/
+!.orchestration/notify.conf
+
+# MCP servers
+mcp-server/node_modules/
+
+# Test results
+testing/
+coverage/
