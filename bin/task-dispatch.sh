@@ -260,18 +260,20 @@ with open(conf_path, "r", encoding="utf-8", errors="replace") as f:
             value = value[1:-1].strip()
         parsed[key] = value
 
-for key in ("failure_mode", "max_failures", "notify_on_failure"):
+for key in ("failure_mode", "max_failures", "notify_on_failure", "budget_tokens"):
     if key in parsed:
         print(f"{key}={parsed[key]}")
 PYEOF
 )"
 
+  BUDGET_TOKENS=0
   while IFS='=' read -r key value; do
     [ -z "${key:-}" ] && continue
     case "$key" in
       failure_mode) FAILURE_MODE="$value" ;;
       max_failures) MAX_FAILURES="$value" ;;
       notify_on_failure) NOTIFY_ON_FAILURE="$value" ;;
+      budget_tokens) BUDGET_TOKENS="$value" ;;
     esac
   done <<EOF
 $parsed_lines
@@ -1019,6 +1021,7 @@ PYEOF
       generate_report "$spec" "$tid" "success" "$out_size" "$actual_duration" "$agent"
       # SLO breach check
       check_slo_breach "$tid" "$agent" "$actual_duration" "success" "$spec"
+      check_budget
       return 0
     fi
 
@@ -1063,7 +1066,58 @@ EOF
   generate_report "$spec" "$tid" "failed" "0" "$actual_duration" "$agent"
   # SLO breach check on failure path too
   check_slo_breach "$tid" "$agent" "$actual_duration" "failed" "$spec"
+  check_budget
   return 1
+}
+
+# ── budget tracking ─────────────────────────────────────────────────────────────
+check_budget() {
+  if [ "${BUDGET_TOKENS:-0}" -le 0 ]; then
+    return 0
+  fi
+
+  local total_chars
+  total_chars=$(python3 -c '
+import json, sys
+log_file, batch_id = sys.argv[1], sys.argv[2]
+total = 0
+try:
+    with open(log_file, "r") as f:
+        for line in f:
+            if not line.strip(): continue
+            try:
+                row = json.loads(line)
+                if row.get("batch_id") == batch_id and row.get("event") == "complete":
+                    total += int(row.get("prompt_chars", 0)) + int(row.get("output_chars", 0))
+            except: pass
+except: pass
+print(total)
+  ' "$LOG_FILE" "$BATCH_ID")
+
+  local used_tokens=$(( total_chars / 4 ))
+  if [ "$used_tokens" -ge "$BUDGET_TOKENS" ]; then
+    echo "[dispatch] 💸 BUDGET EXCEEDED — batch halted (used: ${used_tokens} / budget: ${BUDGET_TOKENS} tokens)"
+    # Kill all running PIDs
+    for p in "$PIDS_DIR"/*.pid; do
+      [ -f "$p" ] || continue
+      pid=$(cat "$p" 2>/dev/null || true)
+      [ -n "$pid" ] && kill -TERM "$pid" 2>/dev/null || true
+    done
+
+    # Write escalation
+    cat > "$INBOX_DIR/escalation-${BATCH_ID}-budget.md" <<EOF
+# Escalation: Budget Exceeded for Batch ${BATCH_ID}
+
+- Budget limit: ${BUDGET_TOKENS} tokens
+- Used: ${used_tokens} tokens
+
+## Suggested PM Action
+1. Review task retries or runaway loops.
+2. Increase budget_tokens in batch.conf if necessary.
+3. Re-dispatch via task-dispatch.sh to resume.
+EOF
+    exit 3
+  fi
 }
 
 # ── sequential dispatch ───────────────────────────────────────────────────────

@@ -16,7 +16,7 @@ Create a task spec file for each unit in `.orchestration/tasks/<batch-id>/` usin
 ```yaml
 ---
 id: <task-id>
-agent: copilot | gemini | 9router-agent
+agent: copilot | gemini-fast | gemini-deep
 reviewer: copilot          # optional
 timeout: 300
 depends_on: [upstream-task-id]  # Leave empty if no dependencies
@@ -29,7 +29,7 @@ depends_on: [upstream-task-id]  # Leave empty if no dependencies
 Check each task's agent assignment against the routing table in `CLAUDE.md`:
 - Architecture / BA / Design → `gemini`
 - Implementation / Bug fix → `copilot`
-- Requires custom backend/model → `9router-agent`
+- Large codebase / architecture → `gemini-deep`
 
 **Step 4 — Dispatch**
 ```bash

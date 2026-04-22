@@ -69,9 +69,8 @@ MODE C — Interactive Agent Tool (task panel visible, monitored)
 | Server | Role |
 |--------|------|
 | `orch-notify` | Async batch inbox, batch status, metrics |
-| `copilot` | **Primary Dev Agent** — implement features, fix bugs, refactor, review |
-| `gemini` | Raw Gemini CLI (analysis tasks, no role) |
-| `9router-agent` | **9Router Proxy** — routes to any model via MITM proxy (Claude/Gemini/GPT/OSS). Register: `claude mcp add 9router-agent node ~/claude-orchestration/mcp-server/9router-agent.mjs` |
+| `copilot` | **GitHub Copilot CLI** — implement features, fix bugs, refactor, review |
+| `gemini` | **Gemini CLI** — analysis tasks, requirements, architecture |
 
 ---
 
@@ -198,18 +197,35 @@ Task spec format: see `templates/task-spec.example.md`
 
 ## Agent Routing Rules
 
-| Task Type | Mode A — MCP | Mode B — Async Batch | Mode C — Agent Tool |
-|-----------|-------------|---------------------|---------------------|
-| Requirements / user stories | `gemini-ba-agent` | `gemini` in task spec | `gemini-agent` |
-| System design / API / ADR | `gemini-architect` | `gemini` in task spec | `gemini-agent` |
-| Security review / threat model | `gemini-security` | `gemini` in task spec | `gemini-agent` |
-| Feature implementation / bug fix | `copilot-dev-agent` (MCP) | `copilot` in task spec | `copilot-agent` |
-| Code review after implementation | `copilot-dev-agent` | `copilot` in task spec | `copilot-agent` |
-| Tests (integration/E2E/coverage) | `copilot-qa-agent` | `copilot` in task spec | — |
-| CI/CD / Docker / IaC | `copilot-devops` | `copilot` in task spec | `copilot-agent` |
-| Large codebase analysis (>500 LOC) | `gemini` raw MCP | `gemini` batch | `gemini-agent` |
+All subagent calls route through **local CLI binaries** (gemini-cli, copilot-cli). No 9Router proxy needed.
+
+**CLI Agents:**
+
+| Agent | CLI | Model | Best for |
+|-------|-----|-------|----------|
+| `gemini-deep` | `gemini-cli` | `gemini-3.1-pro-preview` | Deep architecture, security, complex reasoning |
+| `gemini-fast` | `gemini-cli` | `gemini-2.5-flash` | Requirements, analysis, balanced tasks |
+| `copilot` / `gh-code` | `copilot-cli` | `gpt-5.3-codex` | Code implementation, tests, reviews |
+| `gh-thin` | `copilot-cli` | `gpt-5.3-codex` | Lightweight tasks |
+
+| Task Type | Mode A — MCP | Mode B — CLI | Mode C — Agent Tool |
+|-----------|-------------|--------------|---------------------|
+| Requirements / user stories | `gemini-ba-agent` | `gemini-fast` | `gemini-agent` |
+| System design / API / ADR | `gemini-architect` | `gemini-deep` | `gemini-agent` |
+| Security review / threat model | `gemini-security` | `gemini-deep` | `gemini-agent` |
+| Feature implementation / bug fix | `copilot-dev-agent` (MCP) | `copilot` | `copilot-agent` |
+| Code review after implementation | `copilot-dev-agent` | `copilot` | `copilot-agent` |
+| Tests (integration/E2E/coverage) | `copilot-qa-agent` | `copilot` | — |
+| CI/CD / Docker / IaC | `copilot-devops` | `copilot` | `copilot-agent` |
+| Large codebase analysis (>500 LOC) | `gemini` raw MCP | `gemini-deep` | `gemini-agent` |
 | ≥3 parallel tasks | — | `task-dispatch.sh --parallel` | — |
 | Simple <100 LOC / quick questions | Claude directly | — | — |
+
+**Legacy aliases:**
+- `gemini` → `gemini-fast`
+- `copilot` → `copilot`
+- `gh-code` → `copilot`
+- `gh-thin` → `copilot`
 
 **When to use Mode C (Agent tool):**
 - User explicitly wants task panel visibility
@@ -218,9 +234,8 @@ Task spec format: see `templates/task-spec.example.md`
 
 **Agent tool invocation:**
 ```
-Agent(subagent_type="gemini-agent", prompt="...")    ← uses agents/gemini-agent.md
-Agent(subagent_type="copilot-agent", prompt="...")   ← uses agents/copilot-agent.md
-Agent(subagent_type="9router-agent", prompt="...")   ← uses agents/9router-agent.md (routes via 9Router proxy)
+Agent(subagent_type="gemini-agent", prompt="...")    ← uses agents/gemini-agent.md (calls gemini-cli)
+Agent(subagent_type="copilot-agent", prompt="...")   ← uses agents/copilot-agent.md (calls copilot-cli)
 ```
 
 ---

@@ -223,6 +223,61 @@ function listBatches() {
   });
 }
 
+function getBudgetStatus() {
+  const logPath = join(ORCH_DIR, "tasks.jsonl");
+  const content = safeRead(logPath);
+  if (!content) return null;
+
+  const tasksDir = join(ORCH_DIR, "tasks");
+  const batches = safeReaddir(tasksDir);
+  let activeBudget = null;
+  let activeBatch = null;
+
+  batches.sort((a, b) => {
+    try { return statSync(join(tasksDir, b)).mtimeMs - statSync(join(tasksDir, a)).mtimeMs; } catch { return 0; }
+  });
+
+  for (const b of batches) {
+    const confPath = join(tasksDir, b, "batch.conf");
+    const conf = safeRead(confPath);
+    if (conf) {
+      const match = conf.match(/^budget_tokens:\s*(\d+)/m);
+      if (match && parseInt(match[1]) > 0) {
+        activeBudget = parseInt(match[1]);
+        activeBatch = b;
+        break;
+      }
+    }
+  }
+
+  if (!activeBudget) return null;
+
+  let totalChars = 0;
+  const lines = content.trim().split("\n").filter(Boolean);
+  for (const line of lines) {
+    try {
+      const e = JSON.parse(line);
+      if (e.batch_id === activeBatch && e.event === "complete") {
+        totalChars += (parseInt(e.prompt_chars) || 0) + (parseInt(e.output_chars) || 0);
+      }
+    } catch {}
+  }
+
+  const usedTokens = Math.round(totalChars / 4);
+  const pct = (usedTokens / activeBudget * 100);
+  let status = "ok";
+  if (pct >= 95) status = "critical";
+  else if (pct >= 80) status = "warning";
+
+  return {
+    batch: activeBatch,
+    budget_tokens: activeBudget,
+    used_tokens: usedTokens,
+    budget_pct: pct.toFixed(1),
+    status
+  };
+}
+
 function getProjectHealth() {
   const metrics = getQuickMetrics();
   const batches = listBatches();
@@ -280,6 +335,7 @@ function getProjectHealth() {
     batch_pipeline: {
       open_batches: batches,
       open_batch_count: batches.length,
+      budget: getBudgetStatus()
     },
     recommendation: (metrics.success_rate_pct ?? 0) < 80
       ? 'Success rate below target. Review failed tasks and adjust prompts/dependencies.'

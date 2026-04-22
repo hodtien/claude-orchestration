@@ -3,18 +3,19 @@
 # Claude writes this file, dispatch script reads it.
 # Place in: <project>/.orchestration/tasks/<batch-id>/task-<n>.md
 # Optional batch-level config: <project>/.orchestration/tasks/<batch-id>/batch.conf
-# Example:
+# Example batch.conf:
 #   failure_mode: skip-failed   # fail-fast | skip-failed | retry-failed
 #   max_failures: 0
 #   notify_on_failure: false
+#   budget_tokens: 150000       # optional: hard token budget limit (chars/4 ≈ tokens)
 
 id: example-task-001
-agent: gemini           # copilot | gemini | 9router-agent
-agents: [copilot, gemini] # optional failover chain (ordered)
-route: auto             # optional: auto picks least-loaded (copilot/gemini); omit to use agent above
-task_type: ""           # optional: code | analysis | security | documentation (used for routing suggestions)
-prefer_cheap: false     # optional: true routes to cheapest healthy capable agent for task_type
-reviewer: copilot       # optional: copilot runs after agent, applies+reviews output, writes .review.out
+agent: gemini-fast    # CLI agent: gemini-deep | gemini-fast | copilot | gh-code | gh-thin
+agents: [copilot]   # optional failover chain (ordered) — system tries agents in order
+route: auto             # optional: auto picks least-loaded; omit to use agent above
+task_type: ""           # optional: code | analysis | security | documentation (routing hint)
+prefer_cheap: false     # optional: true routes to cheapest healthy capable combo
+reviewer: copilot    # optional: runs after agent, applies+reviews output, writes .review.out
 timeout: 180            # seconds
 retries: 1              # max retry attempts
 slo_duration_s: 0       # 0 disables SLO checks; >0 sets runtime target in seconds

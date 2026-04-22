@@ -134,10 +134,28 @@ if mode == "check":
     if total_rows_in_window == 0:
         sys.exit(0)  # No data at all in window -> healthy by default
     if check_agent not in agents:
-        # Agent has no log entries in window but may still be available.
-        # Fall back to CLI presence check: absence from logs ≠ DOWN.
+        # No log entries in window — check CLI binaries directly.
+        # gemini-* agents use gemini-cli; copilot/gh-* agents use copilot-cli.
         import shutil
-        sys.exit(0 if shutil.which(check_agent) else 2)
+        import subprocess
+        if check_agent.startswith("gemini"):
+            binary = shutil.which("gemini")
+            if binary:
+                try:
+                    # Quick version check
+                    subprocess.run(["gemini", "--version"], capture_output=True, timeout=5)
+                    sys.exit(0)  # gemini-cli available → healthy
+                except:
+                    pass
+        elif check_agent.startswith(("copilot", "gh-")):
+            binary = shutil.which("copilot")
+            if binary:
+                try:
+                    subprocess.run(["copilot", "--version"], capture_output=True, timeout=5)
+                    sys.exit(0)  # copilot-cli available → healthy
+                except:
+                    pass
+        sys.exit(2)  # CLI not found → agent DOWN
     sys.exit({"HEALTHY": 0, "DEGRADED": 1, "DOWN": 2}[agents[check_agent]["status"]])
 
 if mode == "json":
