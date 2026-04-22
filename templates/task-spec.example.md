@@ -13,7 +13,7 @@ id: example-task-001
 agent: gemini-fast    # CLI agent: gemini-deep | gemini-fast | copilot | gh-code | gh-thin
 agents: [copilot]   # optional failover chain (ordered) — system tries agents in order
 route: auto             # optional: auto picks least-loaded; omit to use agent above
-task_type: ""           # optional: code | analysis | security | documentation (routing hint)
+task_type: ""           # optional: code | analysis | security | documentation (for self-improvement routing)
 prefer_cheap: false     # optional: true routes to cheapest healthy capable combo
 reviewer: copilot    # optional: runs after agent, applies+reviews output, writes .review.out
 timeout: 180            # seconds
@@ -26,6 +26,10 @@ context_from: []        # DEPRECATED: Use depends_on instead. System resolves co
 depends_on: []          # task IDs that must complete before this one starts
 read_files: []          # files to reference (copilot reads natively; note path in prompt for gemini)
 output_format: markdown # markdown | code | json (hint for agent)
+fork_mode: disabled     # auto | disabled — intent fork detection ({{AMBIGUOUS:opt1|opt2}})
+num_forks: 2             # number of parallel forks to explore when ambiguous
+fork_timeout: 60        # seconds per fork probe
+fork_confidence: 0.6    # confidence threshold to trigger forking
 ---
 
 # Task: Example Analysis Task
@@ -48,3 +52,4 @@ Describe the format and structure of the expected result.
 ## Constraints
 - Do not modify any files
 - Focus only on the specified scope
+- Use {{AMBIGUOUS:option1|option2}} markers in the prompt to signal intentional ambiguity

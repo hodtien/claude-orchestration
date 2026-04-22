@@ -884,6 +884,16 @@ $(cat "$ctx_file")
     fi
   fi
 
+  # Intent Fork detection — check for ambiguity markers
+  fork_mode=$(parse_front "$spec" "fork_mode" "disabled")
+  if [ "$fork_mode" = "auto" ] && [ -x "$SCRIPT_DIR/task-fork.sh" ]; then
+    fork_result=$("$SCRIPT_DIR/task-fork.sh" "$spec" 2>/dev/null || echo "")
+    if [ -n "$fork_result" ]; then
+      echo "[dispatch] 🔱 Intent fork triggered: $fork_result"
+      echo "$fork_result" > "$RESULTS_DIR/${tid}.fork.out"
+    fi
+  fi
+
   echo "[dispatch] running $tid → $agent_candidates (retries=$retries)"
 
   # Set parent task ID for tracing (first context_from task)
@@ -1044,6 +1054,17 @@ PYEOF
   fi
   if ! move_to_dlq "$spec" "$tid" "$agent" "$retries"; then
     echo "[dispatch] ⚠️  failed to write DLQ artifacts for $tid" >&2
+  fi
+
+  # Self-Healing DAG
+  if [ "$FAILURE_MODE" != "fail-fast" ] && [ -x "$SCRIPT_DIR/task-selfheal.sh" ]; then
+    selfheal_result=$("$SCRIPT_DIR/task-selfheal.sh" "$tid" "$BATCH_ID" "$BATCH_DIR" 2>/dev/null || echo "abort")
+    case "$selfheal_result" in
+      retry-modified) echo "[dispatch] 🔄 Self-healing: retry-modified" ;;
+      skip-dependents) echo "[dispatch] 🔄 Self-healing: skipped dependents" ;;
+      abort) echo "[dispatch] 🔄 Self-healing: aborting"; batch_abort=true ;;
+      *) echo "[dispatch] 🔄 Self-healing: $selfheal_result" ;;
+    esac
   fi
 
   # Auto-escalation report for PM workflow
@@ -1428,3 +1449,9 @@ if [ "$batch_abort" = "true" ]; then
 fi
 
 show_status
+
+# Self-Improvement Loop: generate retrospective
+if [ -x "$SCRIPT_DIR/orch-retrospective.sh" ]; then
+  "$SCRIPT_DIR/orch-retrospective.sh" "$BATCH_ID" "$duration" \
+    "$success_count" "$failed_count" 2>/dev/null || true
+fi
