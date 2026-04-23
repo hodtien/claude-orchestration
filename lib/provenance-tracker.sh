@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # provenance-tracker.sh — Track file origins and decision lineage
 
-set -euo pipefail
+# NOTE: Do NOT use set -e in this file. This lib is SOURCEd by callers that manage their own error handling.
 
 PROVDIR="${PROVDIR:-$HOME/.claude/orchestration/provenance}"
 PROVENANCE_SESSION_ID="${PROVENANCE_SESSION_ID:-$(date +%s)}"

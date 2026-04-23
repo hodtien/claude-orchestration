@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # style-memory.sh — Persistent style memory that survives sessions
 
-set -euo pipefail
+# NOTE: Do NOT use set -e in this file. This lib is SOURCEd by callers that manage their own error handling.
 
 PROJECT_ROOT="${PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 STYLE_DIR="$PROJECT_ROOT/.orchestration/style-memory"

@@ -6,7 +6,7 @@ if [[ ${BASH_VERSION%%.*} -lt 4 ]]; then
     return 0 2>/dev/null || exit 0
 fi
 
-set -euo pipefail
+# NOTE: Do NOT use set -e in this file. This lib is SOURCEd by callers that manage their own error handling.
 
 # Agent weights for voting
 declare -A AGENT_WEIGHTS=(

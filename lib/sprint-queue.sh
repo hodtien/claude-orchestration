@@ -2,7 +2,7 @@
 # sprint-queue.sh — Sprint Queue Manager
 # Priority-based queue for parallel batch execution.
 
-set -euo pipefail
+# NOTE: Do NOT use set -e in this file. This lib is SOURCEd by callers that manage their own error handling.
 
 ORCH_DIR="${ORCH_DIR:-$HOME/.claude/orchestration}"
 QUEUE_DIR="$ORCH_DIR/sprint-queue"

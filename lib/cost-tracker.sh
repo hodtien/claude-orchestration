@@ -2,7 +2,7 @@
 # cost-tracker.sh — Cost Tracking Library
 # Track token usage and cost per agent, batch, and task.
 
-set -euo pipefail
+# NOTE: Do NOT use set -e in this file. This lib is SOURCEd by callers that manage their own error handling.
 
 ORCH_DIR="${ORCH_DIR:-$HOME/.claude/orchestration}"
 COST_LOG="$ORCH_DIR/cost-tracking.jsonl"

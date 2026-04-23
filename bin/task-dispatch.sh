@@ -885,7 +885,7 @@ ${prompt}"
   fi
 
   # Inject context from prior tasks
-  local ctx_tasks
+  local ctx_tasks ctx_block=""
   # Auto-Context-Resolver: merge context_from AND depends_on
   local explicit_ctx deps_ctx
   explicit_ctx=$(parse_list "$spec" "context_from")
@@ -893,8 +893,9 @@ ${prompt}"
   # Dedup and merge
   ctx_tasks=$(echo -e "${explicit_ctx}\n${deps_ctx}" | tr ' ' '\n' | sort -u | grep -v '^$')
 
+  # Initialize ctx_block before the if block so it's always defined for context compression check
+  local ctx_block=""
   if [ -n "$ctx_tasks" ]; then
-    local ctx_block=""
     for ctx_id in $ctx_tasks; do
       [ -z "$ctx_id" ] && continue
       local ctx_file="$RESULTS_DIR/${ctx_id}.out"

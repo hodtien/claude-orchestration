@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # discarded-alternatives.sh — Store and query discarded alternatives
 
-set -euo pipefail
+# NOTE: Do NOT use set -e in this file. This lib is SOURCEd by callers that manage their own error handling.
 
 ALTDIR="${ALTDIR:-$HOME/.claude/orchestration/discarded-alternatives}"
 MAX_ALTS="${MAX_ALTS:-3}"

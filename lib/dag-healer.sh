@@ -2,7 +2,7 @@
 # dag-healer.sh — Self-Healing DAG Logic
 # Detects failures, identifies blocked paths, and re-routes around failures.
 
-set -euo pipefail
+# NOTE: Do NOT use set -e in this file. This lib is SOURCEd by callers that manage their own error handling.
 
 ORCH_DIR="${ORCH_DIR:-$HOME/.claude/orchestration}"
 HEALED_DIR="$ORCH_DIR/healed-dags"

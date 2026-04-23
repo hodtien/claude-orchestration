@@ -2,7 +2,7 @@
 # agent-failover.sh — Agent Failover Logic Library
 # Provides failover functions for task-dispatch.sh
 
-set -euo pipefail
+# NOTE: Do NOT use set -e in this file. This lib is SOURCEd by callers that manage their own error handling.
 
 ORCH_DIR="${ORCH_DIR:-$HOME/.claude/orchestration}"
 FAILOVER_LOG="$ORCH_DIR/failover.jsonl"

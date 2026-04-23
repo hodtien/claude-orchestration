@@ -2,7 +2,7 @@
 # task-decomposer.sh — Task Decomposition Engine
 # Break complex tasks into 15-min executable units with dependency graph.
 
-set -euo pipefail
+# NOTE: Do NOT use set -e in this file. This lib is SOURCEd by callers that manage their own error handling.
 
 ORCH_DIR="${ORCH_DIR:-$HOME/.claude/orchestration}"
 DECOMP_DIR="$ORCH_DIR/decomposed"

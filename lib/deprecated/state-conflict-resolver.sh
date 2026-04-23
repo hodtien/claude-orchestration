@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # state-conflict-resolver.sh — Conflict resolution logic for speculation layer
 
-set -euo pipefail
+# NOTE: Do NOT use set -e in this file. This lib is SOURCEd by callers that manage their own error handling.
 
 # Resolution strategies
 RESOLVE_RETRY="retry"

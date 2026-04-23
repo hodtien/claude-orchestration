@@ -2,7 +2,7 @@
 # speculation-buffer.sh — Shared State Speculation Layer
 # Agents publish provisional state; conflict detector promotes valid or triggers re-execution.
 
-set -euo pipefail
+# NOTE: Do NOT use set -e in this file. This lib is SOURCEd by callers that manage their own error handling.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SPECDIR="${SPECDIR:-$HOME/.claude/orchestration/speculation}"

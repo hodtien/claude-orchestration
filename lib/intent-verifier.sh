@@ -2,7 +2,7 @@
 # intent-verifier.sh — Intent Verification Gate
 # Verify task specs against codebase reality before execution.
 
-set -euo pipefail
+# NOTE: Do NOT use set -e in this file. This lib is SOURCEd by callers that manage their own error handling.
 
 ORCH_DIR="${ORCH_DIR:-$HOME/.claude/orchestration}"
 VERIFY_LOG="$ORCH_DIR/verification-logs"
