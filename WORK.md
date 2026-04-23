@@ -38,4 +38,5 @@ Deferred (do when actually needed):
 | 2026-04-22 | Archive plan files, add WORK.md workflow | WORK.md + docs/archive/refactor-2026-04-22/ |
 | 2026-04-23 | Smoke test refactor — PASSED. Found + fixed bash 3.2 incompat in triage-tiers/consensus-vote | commit 17cca11 |
 | 2026-04-23 | Verify wiring: agent-failover + cost-tracker + intent-verifier (all confirmed at line-level). state-conflict-resolver reclassified Deprecated | PHASE5_IDEAS.md updated |
+| 2026-04-23 | Runtime proof (smoke-wiring test): intent-verifier confirmed fired (verification-logs +1). Found regression: bash 3.2 missing function stubs in triage-tiers → fixed | commit 7ebf500 |
 | 2026-04-15 | Phase 1-4 refactor batches (health beacon, SLAs, DAG, metrics, failover, scheduler, reports) | .orchestration/tasks/phase1-4/ |
