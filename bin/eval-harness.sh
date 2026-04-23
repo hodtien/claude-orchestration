@@ -342,7 +342,7 @@ case "${1:-}" in
 esac
 
 # Collect positional args
-TASK_TYPE="${1:-}"
+TASK_TYPE=""
 MODEL_FILTER=""
 VERBOSE="false"
 
@@ -351,7 +351,11 @@ while [[ $# -gt 0 ]]; do
     --model) MODEL_FILTER="$2"; shift 2 ;;
     --verbose) VERBOSE="true"; shift ;;
     -*) echo "Unknown flag: $1" >&2; shift ;;
-    *) break ;;
+    *) # non-flag arg = TASK_TYPE (only if not already set)
+        if [[ -z "$TASK_TYPE" ]]; then
+          TASK_TYPE="$1"
+        fi
+        shift ;;
   esac
 done
 
@@ -368,7 +372,8 @@ fi
 
 # Collect models to test
 if [[ -n "$MODEL_FILTER" ]]; then
-  read -ra MODELS <<< "$MODEL_FILTER"
+  # MODEL_FILTER overrides task_mapping completely — only run specified model(s)
+  IFS=' ' read -ra MODELS <<< "$MODEL_FILTER"
 else
   models_json=$(get_models_for_task_type "$TASK_TYPE")
   if [[ -z "$models_json" ]] || [[ "$models_json" == "[]" ]]; then

@@ -893,8 +893,7 @@ ${prompt}"
   # Dedup and merge
   ctx_tasks=$(echo -e "${explicit_ctx}\n${deps_ctx}" | tr ' ' '\n' | sort -u | grep -v '^$')
 
-  # Initialize ctx_block before the if block so it's always defined for context compression check
-  local ctx_block=""
+  # ctx_block already initialized at line 888 (ctx_tasks ctx_block="") — always defined for compression check below
   if [ -n "$ctx_tasks" ]; then
     for ctx_id in $ctx_tasks; do
       [ -z "$ctx_id" ] && continue

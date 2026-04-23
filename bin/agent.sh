@@ -131,12 +131,56 @@ run_gemini() {
   return $exit_code
 }
 
+# router (9Router) runner — for router-channel agents like minimax-code
+run_router() {
+  local model="${1:-minimax-code}"
+  local prompt_file
+  prompt_file=$(mktemp "/tmp/orch-router-$$.XXXXXX")
+  printf '%s' "$PROMPT" > "$prompt_file"
+
+  python3 - "$model" "$prompt_file" <<'PYEOF'
+import json, os, sys, subprocess
+model = sys.argv[1]
+prompt_file = sys.argv[2]
+with open(os.path.expanduser("~/.claude/settings.json")) as f:
+    token = json.load(f)["env"]["ANTHROPIC_AUTH_TOKEN"]
+with open(prompt_file) as f:
+    prompt = f.read()
+result = subprocess.run([
+    "curl", "-s", "-X", "POST", "http://localhost:20128/v1/messages",
+    "-H", "Content-Type: application/json",
+    "-H", "anthropic-version: 2023-06-01",
+    "-H", f"x-api-key: {token}",
+    "-d", json.dumps({"model": model, "messages": [{"role": "user", "content": prompt}], "max_tokens": 4096, "stream": False})
+], capture_output=True, text=True, timeout=60)
+try:
+    data = json.loads(result.stdout)
+    for block in data.get("content", []):
+        if block.get("type") == "text":
+            print(block.get("text", ""), end="", flush=True)
+            break
+    else:
+        for block in data.get("content", []):
+            if block.get("type") == "thinking":
+                print("[thinking]", end="", flush=True)
+                break
+except json.JSONDecodeError:
+    print(result.stdout[:500] if result.stdout else "[empty response]", end="", flush=True)
+PYEOF
+
+  local exit_code=$?
+  rm -f "$prompt_file"
+  return $exit_code
+}
+
+
 # copilot-cli runner
 run_copilot() {
   # Write prompt to temp file
   local prompt_file
   prompt_file=$(mktemp "/tmp/orch-copilot-$$.XXXXXX")
   printf '%s' "$PROMPT" > "$prompt_file"
+
 
   copilot --model gpt-5.3-codex -p "$(cat "$prompt_file")" 2>&1
   local exit_code=$?
@@ -168,9 +212,15 @@ run_agent() {
     copilot|gh-code|gh-thin)
       run_copilot > "$PARTIAL_OUTPUT_FILE" 2>&1
       ;;
+    minimax-code|minimax|minimax_flash)
+      run_router "minimax-code" > "$PARTIAL_OUTPUT_FILE" 2>&1
+      ;;
+    cc/*|gempro|gemmed|gemlow)
+      run_router "$AGENT" > "$PARTIAL_OUTPUT_FILE" 2>&1
+      ;;
     *)
       echo "[orch] ERROR: unknown agent '$AGENT'" >&2
-      echo "[orch] Known agents: gemini-deep, gemini-fast, gemini, copilot, gh-code, gh-thin" >&2
+      echo "[orch] Known: gemini-deep, gemini-fast, gemini, copilot, gh-code, gh-thin, minimax-code, cc/*, gempro, gemmed, gemlow" >&2
       return 1
       ;;
   esac

@@ -1,244 +1,254 @@
-# models.yaml — Task → Model mapping for Claude Orchestration
-#
-# How it works:
-#   - Claude Code is configured (via settings.json) to route through 9router at localhost:20128.
-#   - Task dispatcher reads this file to pick the right model(s) for each task type.
-#   - Two execution modes per task:
-#       * parallel: run N models simultaneously, take fastest/best (race)
-#       * fallback: tried sequentially if parallel results all fail
-#   - Tasks delegated to gemini-cli or gh copilot do NOT go through 9router —
-#     those CLIs manage their own auth/model.
-#
-# Channel prefix convention in model names:
-#   - minimax-*       → via 9router (Anthropic-compat adapter)
-#   - cc/claude-*     → via 9router targeting Claude API
-#   - gh/gpt-*        → via gh copilot CLI (shell exec)
-#   - gemini-*        → via gemini-cli (shell exec)
-#
-# Philosophy:
-#   - Prefer cheap model first (minimax, haiku).
-#   - Run PARALLEL when multiple cheap/medium models could solve it —
-#     race for speed, compare quality.
-#   - Reserve Opus for truly large/complex design work.
-
-# ── Channels ──────────────────────────────────────────────────────────────────
 channels:
   router:
-    # Goes through 9router proxy (Anthropic-compatible API)
     base_url: http://localhost:20128
     auth_env: ANTHROPIC_API_KEY
-    prefix: cc/                     # cc/claude-sonnet-4-6, cc/claude-haiku-4-5
-    also_serves: [minimax-code]     # 9router also exposes minimax under Anthropic-compat
+    prefix: cc/
+    also_serves:
+    - minimax-code
   gemini_cli:
     binary: gemini
-    prefix: ""                       # gemini-2.5-pro
+    prefix: ''
   copilot_cli:
     binary: copilot
-    prefix: gh/                      # gh/gpt-5.3-codex
-
-# ── Models available ─────────────────────────────────────────────────────────
+    prefix: gh/
 models:
-  # Via 9router (Claude accounts load-balanced)
   cc/claude-sonnet-4-6:
     channel: router
     tier: premium
     cost_hint: high
-
   cc/claude-sonnet-4-5:
     channel: router
     tier: premium
     cost_hint: high
-
   cc/claude-opus-4-6:
     channel: router
     tier: ultra
     cost_hint: very-high
-
   cc/claude-haiku-4-5:
     channel: router
     tier: fast
     cost_hint: low
-
-  # Via 9router (Minimax under Anthropic-compat)
   minimax-code:
     channel: router
     tier: cheap
-    strengths: [code, draft, fast]
+    strengths:
+    - code
+    - draft
+    - fast
     cost_hint: medium-low
-
-  # Via gh copilot CLI
   gh/gpt-5.3-codex:
     channel: copilot_cli
     tier: code-review
-    strengths: [code, code-review, ui-ux, repo-aware]
+    strengths:
+    - code
+    - code-review
+    - ui-ux
+    - repo-aware
     cost_hint: medium
-
   gh/claude-haiku-4-5:
-    # gh copilot also exposes Claude Haiku — use when gh auth is the available one
     channel: copilot_cli
     tier: fast
     cost_hint: low
-
-  # Via gemini CLI
   gemini-pro:
     channel: gemini_cli
     tier: analysis
-    strengths: [long-context, 1M-tokens]
+    strengths:
+    - long-context
+    - 1M-tokens
     cost_hint: medium
-
   gemini-flash:
     channel: gemini_cli
     tier: fast-analysis
     cost_hint: low
-
-  # Custom models (gemini-cli manages model selection internally)
-  # gemini-pro: opus/sonnet-level — architecture, design, BA analysis
   gempro:
     channel: router
     tier: premium
-    strengths: [architecture, system-design, requirements, deep-reasoning]
+    strengths:
+    - architecture
+    - system-design
+    - requirements
+    - deep-reasoning
     cost_hint: medium-high
-    note: "Maps to gemini-2.5-pro in gemini-cli config"
-
-  # gemini-medium: coding — implement, fix, refactor, review, write tests
+    note: Maps to gemini-2.5-pro in gemini-cli config
   gemmed:
     channel: router
     tier: medium
-    strengths: [code, refactor, review, tests, implementation]
+    strengths:
+    - code
+    - refactor
+    - review
+    - tests
+    - implementation
     cost_hint: medium-low
-    note: "Maps to gemini-2.5-flash or configurable in gemini-cli"
-
-  # gemini-low: quick tasks — quick_answer, summarize, classify
+    note: Maps to gemini-2.5-flash or configurable in gemini-cli
   gemlow:
     channel: router
     tier: fast
-    strengths: [quick-answer, summarize, classify]
+    strengths:
+    - quick-answer
+    - summarize
+    - classify
     cost_hint: low
-    note: "Maps to fastest available in gemini-cli"
-
-# ── Task Type → Model Mapping ─────────────────────────────────────────────────
-# Two-tier strategy:
-#   - parallel: models run simultaneously. Dispatcher picks first success
-#     (or runs consensus vote via lib/consensus-vote.sh if ≥2 succeed).
-#   - fallback: tried in order only if ALL parallel models failed.
-#
-# Rationale column explains the thinking for your own reference.
-
+    note: Maps to fastest available in gemini-cli
 task_mapping:
-
-  # 1 ── Quick answer / summarize / classify ──────────────────────────────────
   quick_answer:
-    parallel: [gemini-low, minimax-code]
-    fallback: [cc/claude-haiku-4-5, minimax-code]
-    rationale: "gemini-low handles fast classification; minimax as backup."
-
+    parallel:
+    - gemini-low
+    - minimax-code
+    fallback:
+    - cc/claude-haiku-4-5
+    rationale: gemini-low handles fast classification; minimax as backup.
   summarize:
-    parallel: [gemini-low, minimax-code]
-    fallback: [cc/claude-haiku-4-5, minimax-code]
-    note: "minimax-code is last-resort backup for all task types"
-
+    parallel:
+    - gemini-low
+    - minimax-code
+    fallback:
+    - cc/claude-haiku-4-5
+    note: minimax-code is last-resort backup for all task types
   classify_intent:
-    parallel: [gemini-low, minimax-code]
-    fallback: [cc/claude-haiku-4-5, minimax-code]
-
-  # 2 ── Code implementation / refactor ──────────────────────────────────────
+    parallel:
+    - gemini-low
+    - minimax-code
+    fallback:
+    - cc/claude-haiku-4-5
   implement_feature:
-    parallel: [gemini-medium, gh/gpt-5.3-codex]
-    fallback: [cc/claude-sonnet-4-6, cc/claude-opus-4-6, minimax-code]
-    rationale: "gemini-medium for coding; copilot for repo context; Claude premium as safety net; minimax-code as last resort."
-
+    parallel:
+    - gemini-medium
+    - gh/gpt-5.3-codex
+    - minimax-code
+    fallback:
+    - cc/claude-sonnet-4-6
+    - cc/claude-opus-4-6
+    rationale: gemini-medium for coding; copilot for repo context; Claude premium
+      as safety net; minimax-code as last resort.
   fix_bug:
-    parallel: [gemini-medium, gh/gpt-5.3-codex]
-    fallback: [cc/claude-sonnet-4-6, cc/claude-opus-4-6, minimax-code]
-
+    parallel:
+    - gemini-medium
+    - gh/gpt-5.3-codex
+    - minimax-code
+    fallback:
+    - cc/claude-sonnet-4-6
+    - cc/claude-opus-4-6
   refactor_code:
-    parallel: [gemini-medium, gh/gpt-5.3-codex]
-    fallback: [cc/claude-sonnet-4-6, cc/claude-opus-4-6, minimax-code]
-
-  # 3 ── Tests ────────────────────────────────────────────────────────────────
+    parallel:
+    - gemini-medium
+    - gh/gpt-5.3-codex
+    - minimax-code
+    fallback:
+    - cc/claude-sonnet-4-6
+    - cc/claude-opus-4-6
   write_tests:
-    parallel: [gemini-medium, gh/gpt-5.3-codex]
-    fallback: [cc/claude-sonnet-4-5, cc/claude-sonnet-4-6, minimax-code]
-    rationale: "gemini-medium handles test generation; copilot for repo-aware tests; minimax-code last resort."
-
-  # 4 ── Code review & UI/UX ─────────────────────────────────────────────────
+    parallel:
+    - gemini-medium
+    - gh/gpt-5.3-codex
+    - minimax-code
+    fallback:
+    - cc/claude-sonnet-4-5
+    - cc/claude-sonnet-4-6
+    rationale: gemini-medium handles test generation; copilot for repo-aware tests;
+      minimax-code last resort.
   code_review:
-    parallel: [gemini-medium, gh/gpt-5.3-codex]
-    fallback: [cc/claude-sonnet-4-6, minimax-code]
-    rationale: "gemini-medium for review; copilot for repo context; minimax-code as backup."
-
+    parallel:
+    - gemini-medium
+    - gh/gpt-5.3-codex
+    - minimax-code
+    fallback:
+    - cc/claude-sonnet-4-6
+    rationale: gemini-medium for review; copilot for repo context; minimax-code as
+      backup.
   ui_ux_review:
-    parallel: [gemini-medium, gh/gpt-5.3-codex]
-    fallback: [cc/claude-sonnet-4-6, minimax-code]
-
-  # 5 ── Architecture analysis / security audit ──────────────────────────────
+    parallel:
+    - gemini-medium
+    - gh/gpt-5.3-codex
+    - minimax-code
+    fallback:
+    - cc/claude-sonnet-4-6
   architecture_analysis:
-    parallel: [gemini-pro]
-    fallback: [cc/claude-opus-4-6, cc/claude-sonnet-4-6, minimax-code]
-    rationale: "gemini-pro for deep architecture reasoning; Claude Opus as premium backup; minimax-code last resort."
-
+    parallel:
+    - gemini-pro
+    - minimax-code
+    fallback:
+    - cc/claude-opus-4-6
+    - cc/claude-sonnet-4-6
+    rationale: gemini-pro for deep architecture reasoning; Claude Opus as premium
+      backup; minimax-code last resort.
   security_audit:
-    parallel: [gemini-pro]
-    fallback: [cc/claude-opus-4-6, cc/claude-sonnet-4-6, minimax-code]
-
-  # 6 ── Requirements / BA ───────────────────────────────────────────────────
+    parallel:
+    - gemini-pro
+    - minimax-code
+    fallback:
+    - cc/claude-opus-4-6
+    - cc/claude-sonnet-4-6
   analyze_requirements:
-    parallel: [gemini-pro]
-    fallback: [cc/claude-sonnet-4-6, cc/claude-opus-4-6, minimax-code]
-    rationale: "gemini-pro handles requirements analysis; Claude premium as safety net; minimax-code last resort."
-
+    parallel:
+    - gemini-pro
+    - minimax-code
+    fallback:
+    - cc/claude-sonnet-4-6
+    - cc/claude-opus-4-6
+    rationale: gemini-pro handles requirements analysis; Claude premium as safety
+      net; minimax-code last resort.
   create_user_stories:
-    parallel: [gemini-pro]
-    fallback: [cc/claude-sonnet-4-6, minimax-code]
-
-  # 7 ── API design (module level) ──────────────────────────────────────────
+    parallel:
+    - gemini-pro
+    - minimax-code
+    fallback:
+    - cc/claude-sonnet-4-6
   design_api:
-    parallel: [gemini-pro, cc/claude-sonnet-4-6]
-    fallback: [cc/claude-opus-4-6, minimax-code]
-    rationale: "gemini-pro for API design; Claude Sonnet as parallel option; minimax-code as backup."
-
-  # 8 ── System design (whole architecture) ─────────────────────────────────
+    parallel:
+    - gemini-pro
+    - cc/claude-sonnet-4-6
+    - minimax-code
+    fallback:
+    - cc/claude-opus-4-6
+    rationale: gemini-pro for API design; Claude Sonnet as parallel option; minimax-code
+      as backup.
   system_design:
-    parallel: [gemini-pro]
-    fallback: [cc/claude-opus-4-6, cc/claude-sonnet-4-6, minimax-code]
-    rationale: "gemini-pro for whole-system design; Claude Opus as premium backup; minimax-code last resort."
-
-  # ── Ops / DevOps ───────────────────────────────────────────────────────────────
+    parallel:
+    - gemini-pro
+    - minimax-code
+    fallback:
+    - cc/claude-opus-4-6
+    - cc/claude-sonnet-4-6
+    rationale: gemini-pro for whole-system design; Claude Opus as premium backup;
+      minimax-code last resort.
   write_dockerfile:
-    parallel: [gemini-medium, cc/claude-sonnet-4-5]
-    fallback: [cc/claude-sonnet-4-6, minimax-code]
-
+    parallel:
+    - gemini-medium
+    - cc/claude-sonnet-4-5
+    - minimax-code
+    fallback:
+    - cc/claude-sonnet-4-6
   setup_ci_cd:
-    parallel: [gemini-medium, cc/claude-sonnet-4-6]
-    fallback: [cc/claude-sonnet-4-5, minimax-code]
-
-  # 9 ── Whole-repo analysis (gemini-cli only — 1M token context) ───────────
+    parallel:
+    - gemini-medium
+    - cc/claude-sonnet-4-6
+    - minimax-code
+    fallback:
+    - cc/claude-sonnet-4-5
   repo_analysis:
-    parallel: [gemini-pro]
-    fallback: [cc/claude-opus-4-6, cc/claude-sonnet-4-6, minimax-code]
-    rationale: "1M-token context — feed whole repo; minimax-code as last resort."
-
-  # ── Default ────────────────────────────────────────────────────────────────
+    parallel:
+    - gemini-pro
+    - minimax-code
+    fallback:
+    - cc/claude-opus-4-6
+    - cc/claude-sonnet-4-6
+    rationale: 1M-token context — feed whole repo; minimax-code as last resort.
   default:
-    parallel: [gemini-low]
-    fallback: [cc/claude-haiku-4-5, cc/claude-sonnet-4-5, minimax-code]
-
-# ── Parallel execution policy ────────────────────────────────────────────────
+    parallel:
+    - gemini-low
+    - minimax-code
+    fallback:
+    - cc/claude-haiku-4-5
+    - cc/claude-sonnet-4-5
 parallel_policy:
-  # What to do when N models in `parallel` all return successfully:
-  pick_strategy: first_success       # Options: first_success | consensus | longest | shortest
-  # first_success = fastest wins, cancel others (saves cost)
-  # consensus     = wait for all, use lib/consensus-vote.sh to merge
-  # longest/shortest = pick by output length
-
-  max_parallel: 3                    # Never run more than N simultaneously per task
+  pick_strategy: first_success
+  max_parallel: 3
   cancel_slower_on_first_success: true
   timeout_per_model_sec: 120
-
-# ── Router hints (sent to 9router) ───────────────────────────────────────────
 router_hints:
-  round_robin_accounts: true         # 9router has multiple Claude accounts
-  respect_quota: true                # Skip accounts near rate-limit
+  round_robin_accounts: true
+  respect_quota: true
   prefer_cheaper_on_tie: true
   circuit_breaker_threshold: 3
   circuit_breaker_cooldown_sec: 60
