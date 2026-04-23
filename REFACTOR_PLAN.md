@@ -1,4 +1,5 @@
 # Refactor Plan — Claude Orchestration
+# ARCHIVED — 2026-04-22 — see docs/archive/refactor-2026-04-22/
 
 **Goal:** Simplify the orchestration system to fit its actual use (solo dev)
 and align with the multi-model routing architecture via 9router.

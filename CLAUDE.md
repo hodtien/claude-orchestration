@@ -6,6 +6,20 @@ No sprint ceremonies. No daily standups. Agents complete tasks and report back.
 
 ---
 
+## Active Work
+
+All current work lives in `WORK.md`. No new MD files for work-in-progress.
+
+**Workflow:**
+- Read `WORK.md` at session start — resume any pending tasks
+- Active tasks → `## Active` section of `WORK.md`
+- Ideas not yet started → `## Icebox`
+- Done → mark `[x]`, move to `## Archive` with date
+- Big feature design (>200 lines) → `docs/DESIGN_<feature>.md`
+- Point-in-time audit → `docs/archive/<name>_<date>.md`
+
+---
+
 ## When to delegate
 
 | Trigger | Default action |

@@ -1,4 +1,5 @@
 # Handoff Plan — Claude Orchestration Refactor
+# ARCHIVED — 2026-04-22 — see docs/archive/refactor-2026-04-22/
 
 **Target agent:** any capable coding agent (copilot CLI / claude-code subagent / gemini)
 **Prerequisites:** read `REFACTOR_PLAN.md` and `config/models.yaml` before starting
