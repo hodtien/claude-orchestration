@@ -2,8 +2,16 @@
 # triage-tiers.sh — Budget-Tiered Task Triage Routing Library
 # Source this file to get tier-based routing functions.
 
-# bash 3.x (macOS default) doesn't support associative arrays
+# bash 3.x (macOS default) doesn't support associative arrays.
+# Define no-op stubs so callers (task-dispatch.sh) don't fail with "command not found".
 if [[ ${BASH_VERSION%%.*} -lt 4 ]]; then
+    triage_get_agent()         { echo "default-agent"; }
+    triage_get_timeout()       { echo "120"; }
+    triage_get_features()      { echo ""; }
+    triage_requires_council()  { return 1; }
+    triage_requires_dag()      { return 1; }
+    triage_supports_direct_exec() { return 0; }
+    triage_log()               { :; }
     return 0 2>/dev/null || exit 0
 fi
 
