@@ -10,8 +10,6 @@
 Nothing pending.
 
 Deferred (do when actually needed):
-- [ ] Full `route_task` MCP round-trip test from live Claude Code session (when next mid-session delegation happens)
-- [ ] `task-dispatch.sh --parallel` with real agents on 2-3 task fake batch (before next real batch run)
 - [ ] `setup-router.sh apply` on `~/.claude/settings.json` (when ready to switch Claude Code to 9router)
 
 ---
@@ -40,5 +38,7 @@ Deferred (do when actually needed):
 | 2026-04-23 | Verify wiring: agent-failover + cost-tracker + intent-verifier (all confirmed at line-level). state-conflict-resolver reclassified Deprecated | PHASE5_IDEAS.md updated |
 | 2026-04-23 | Runtime proof (smoke-wiring test): intent-verifier confirmed fired (verification-logs +1). Found regression: bash 3.2 missing function stubs in triage-tiers → fixed | commit 7ebf500 |
 | 2026-04-23 | Runtime proof cost-tracker: ✅ confirmed fired. Dispatched real task via copilot → cost-tracking.jsonl +1 line, cost-summary by_agent task_count +1 (31→60 tokens_input, 308→384 tokens_output) | config/models.yaml + WORK.md |
+| 2026-04-23 | Runtime proof `task-dispatch.sh --parallel`: ✅ 3-task fake batch success in 84s. cost-tracking +3 lines, inbox notification written, all 3 results in results/. No failures. | WORK.md |
+| 2026-04-23 | Route_task MCP round-trip test: ✅ via 9router. `route_task("quick_answer", ...)` → minimax-code returns "ok". Also registered `9router-agent` MCP server (claude mcp list shows: 9router-agent ✓ Connected) | mcp-server/9router-agent.mjs |
 | 2026-04-23 | Add minimax-code as backup fallback to all task types in models.yaml | config/models.yaml |
 | 2026-04-15 | Phase 1-4 refactor batches (health beacon, SLAs, DAG, metrics, failover, scheduler, reports) | .orchestration/tasks/phase1-4/ |
