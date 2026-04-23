@@ -463,7 +463,7 @@ overall_total = len(results)
 print(f"{'TOTAL':<25} {overall_pass}/{overall_total} ({overall_pass/overall_total*100:.0f}%)")
 
 # Write results file
-results_dir = pathlib.Path(os.path.expanduser("~/.claude/orchestration/evals/results/"))
+results_dir = pathlib.Path(os.path.expanduser("~/.claude-orchestration/.orchestration/evals/results/"))
 results_dir.mkdir(parents=True, exist_ok=True)
 results_file = results_dir / f"{datetime.date.today().isoformat()}.json"
 
