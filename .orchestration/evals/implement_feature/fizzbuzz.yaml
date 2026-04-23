@@ -1,0 +1,14 @@
+task_type: implement_feature
+description: "Should implement a working fizzbuzz function"
+input: |
+  Implement a fizzbuzz function in Python that:
+  - Returns "Fizz" for multiples of 3
+  - Returns "Buzz" for multiples of 5
+  - Returns "FizzBuzz" for multiples of both
+  - Returns the number as string otherwise
+  Use def fizzbuzz(n):
+expected_properties:
+  must_contain: ["def fizzbuzz", "FizzBuzz", "return"]
+  must_not_contain: ["TODO", "FIXME", "pass"]
+  regex_match: "(FizzBuzz|not implemented)"
+timeout: 60

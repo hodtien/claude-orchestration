@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # context-compressor.sh — Context Compression Engine
 # Automatically compress old context to fit more in window.
-
-set -euo pipefail
+#
+# NOTE: Do NOT use "set -e" in this file.
+# This lib is SOURCEd by task-dispatch.sh which uses its own error-handling.
+# Individual functions handle their own errors with explicit return codes.
 
 ORCH_DIR="${ORCH_DIR:-$HOME/.claude/orchestration}"
 CONTEXT_CACHE="$ORCH_DIR/context-cache"
@@ -67,7 +69,7 @@ archive_original() {
     local content="$2"
 
     local archive_file="$ARCHIVE_DIR/${key//\//_}-$(date +%s).gz"
-    echo "$content" | gzip > "$archive_file"
+    echo "$content" | gzip > "$archive_file" 2>/dev/null || true
     echo "$archive_file"
 }
 
@@ -120,11 +122,11 @@ compress_session() {
         local key
         key=$(basename "$file")
         local content
-        content=$(cat "$file")
+        content=$(cat "$file" 2>/dev/null || echo "")
 
         # Calculate priority
         local priority
-        priority=$(calc_priority "$content" "$(stat -f %Sm -t %Y-%m-%dT%H:%M:%SZ "$file" 2>/dev/null)")
+        priority=$(calc_priority "$content" "$(stat -f %Sm -t %Y-%m-%dT%H:%M:%SZ "$file" 2>/dev/null || echo "")")
 
         # Determine compression level based on priority
         local level
@@ -137,10 +139,10 @@ compress_session() {
         fi
 
         # Archive original
-        archive_original "$key" "$content" > /dev/null
+        archive_original "$key" "$content" > /dev/null 2>&1 || true
 
         # Compress and store
-        compress_summary "$content" "$level" > "$compressed_session/$key"
+        compress_summary "$content" "$level" > "$compressed_session/$key" 2>/dev/null || true
     done
 
     echo "$compressed_session"
@@ -154,7 +156,7 @@ retrieve_archive() {
     archive_file=$(find "$ARCHIVE_DIR" -name "${key//\//_}*.gz" -type f 2>/dev/null | head -1)
 
     if [[ -n "$archive_file" ]] && [[ -f "$archive_file" ]]; then
-        gunzip -c "$archive_file"
+        gunzip -c "$archive_file" 2>/dev/null || echo ""
     else
         echo ""
         return 1
@@ -167,7 +169,7 @@ search_archive() {
 
     find "$ARCHIVE_DIR" -name "*.gz" -type f 2>/dev/null | while read -r archive; do
         local content
-        content=$(gunzip -c "$archive" 2>/dev/null)
+        content=$(gunzip -c "$archive" 2>/dev/null || echo "")
         if echo "$content" | grep -qi "$query"; then
             echo "Match: $archive"
             echo "$content" | grep -i "$query" | head -3
@@ -184,7 +186,7 @@ if [[ -n "${BASH_SOURCE[0]:-}" ]] && [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
         artifacts)   shift; extract_artifacts "$@" ;;
         archive)     shift; archive_original "$@" ;;
         priority)    shift; calc_priority "$@" ;;
-        compress)     shift; compress_session "$@" ;;
+        compress)    shift; compress_session "$@" ;;
         retrieve)    shift; retrieve_archive "$@" ;;
         search)      shift; search_archive "$@" ;;
         *)           echo "Usage: $0 summary|decisions|artifacts|archive|priority|compress|retrieve|search" >&2; exit 1 ;;

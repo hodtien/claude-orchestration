@@ -1,0 +1,17 @@
+task_type: code_review
+description: "Should detect unused variable"
+input: |
+  Review this Python code:
+  ```python
+  def calculate(x, y):
+      z = x + y
+      return z
+
+  result = calculate(10, 20)
+  print(result)
+  ```
+expected_properties:
+  must_contain: ["unused", "z"]
+  must_not_contain: ["TODO", "FIXME"]
+  regex_match: "(unused|not used|z.*=.*x \\+ y)"
+timeout: 60
