@@ -1,0 +1,18 @@
+name: perf-analysis
+description: Bottleneck analysis -> fix implementation
+variables:
+  - TARGET_PATH
+  - CONCERN
+tasks:
+  - id: "{BATCH_ID}-01-bottleneck-analysis"
+    agent: gemini
+    task_type: analysis
+    slo_duration_s: 300
+    prompt: "Analyse performance bottlenecks in {TARGET_PATH}. Primary concern: {CONCERN}."
+  - id: "{BATCH_ID}-02-implement-fixes"
+    agent: copilot
+    task_type: code
+    depends_on: ["{BATCH_ID}-01-bottleneck-analysis"]
+    slo_duration_s: 600
+    prompt: "Implement high-impact performance fixes in {TARGET_PATH} based on the bottleneck analysis. Focus on: {CONCERN}."
+

@@ -29,6 +29,15 @@ HEALTH_BEACON_SH="$SCRIPT_DIR/orch-health-beacon.sh"
 [ -f "$SCRIPT_DIR/../lib/cost-tracker.sh" ] && . "$SCRIPT_DIR/../lib/cost-tracker.sh" || cost_record() { return 0; }
 # shellcheck source=../lib/agent-failover.sh
 [ -f "$SCRIPT_DIR/../lib/agent-failover.sh" ] && . "$SCRIPT_DIR/../lib/agent-failover.sh" || failover_find_available() { return 1; }
+# shellcheck source=../lib/quality-gate.sh
+if [ -f "$SCRIPT_DIR/../lib/quality-gate.sh" ]; then
+  . "$SCRIPT_DIR/../lib/quality-gate.sh"
+else
+  check_quality_gate() { echo "pass"; }
+  trigger_reflexion() { return 0; }
+fi
+# shellcheck source=../lib/context-compressor.sh
+[ -f "$SCRIPT_DIR/../lib/context-compressor.sh" ] && . "$SCRIPT_DIR/../lib/context-compressor.sh" || compress_session() { return 0; }
 BATCH_DIR="${1:?Usage: task-dispatch.sh <batch-dir> [--parallel|--status]}"
 MODE="${2:---sequential}"
 # Always retry skipped/failed tasks — no flag needed
@@ -916,6 +925,38 @@ $(cat "$ctx_file")
     fi
   fi
 
+  # ── Context compression check (Phase 6.3) ──────────────────────────────────
+  # If context_budget_threshold is set and prior artifacts > 50k tokens, compress
+  if declare -f compress_session > /dev/null 2>&1; then
+    local ctx_size
+    ctx_size=$(echo "$ctx_block" | wc -c 2>/dev/null || echo "0")
+    local ctx_tokens=$((ctx_size / 4))
+    local threshold_tokens
+    threshold_tokens="${CONTEXT_BUDGET_THRESHOLD:-50000}"
+    if [ "$ctx_tokens" -gt "$threshold_tokens" ]; then
+      echo "[dispatch] 📦 context-compressor: $ctx_tokens tokens (>${threshold_tokens}) → compressing"
+      local session_id="dispatch-${BATCH_ID}-${tid}"
+      mkdir -p "$ORCH_DIR/context-cache/$session_id"
+      echo "$ctx_block" > "$ORCH_DIR/context-cache/$session_id/prompt.ctx"
+      local compressed_dir
+      compressed_dir=$(compress_session "$session_id" 70 2>/dev/null || echo "")
+      if [ -n "$compressed_dir" ] && [ -d "$compressed_dir" ]; then
+        local compressed_prompt
+        compressed_prompt=$(cat "$compressed_dir/prompt.ctx" 2>/dev/null || echo "$ctx_block")
+        # Update ctx_block so downstream uses compressed content
+        ctx_block="$compressed_prompt"
+        # Update local prompt too (built from ctx_block earlier)
+        prompt="${ctx_block}$(parse_body "$spec")"
+        # Compression ratio: compressed_size / original_size
+        #   1.0 = no compression (100% remained), 0.5 = compressed to 50%, 0.0 = empty
+        #   Acceptance criteria uses this ratio as-is (no need to invert)
+        local ratio
+        ratio=$(echo "scale=2; $(echo "$compressed_prompt" | wc -c) / $ctx_size" | bc 2>/dev/null || echo "1.0")
+        echo "[dispatch] 📦 context compressed: ratio=${ratio} (${ctx_size}B → $(echo "$compressed_prompt" | wc -c)B)"
+      fi
+    fi
+  fi
+
   # Intent Fork detection — check for ambiguity markers
   fork_mode=$(parse_front "$spec" "fork_mode" "disabled")
   if [ "$fork_mode" = "auto" ] && [ -x "$SCRIPT_DIR/task-fork.sh" ]; then
@@ -1059,10 +1100,25 @@ PYEOF
       # Run reviewer pipeline (copilot applies + reviews output)
       run_reviewer "$spec" "$tid"
 
-      # Generate structured completion report
-      generate_report "$spec" "$tid" "success" "$out_size" "$actual_duration" "$agent"
-      # SLO breach check
-      check_slo_breach "$tid" "$agent" "$actual_duration" "success" "$spec"
+      # ── Quality gate check (Phase 7.3 / 6.2 reflexion trigger) ──────────────────
+      local task_status="success"
+      if declare -f check_quality_gate > /dev/null 2>&1; then
+        local gate_result
+        gate_result=$(check_quality_gate "$RESULTS_DIR/${tid}.out" "$RESULTS_DIR/${tid}.log" "$tid" 2>/dev/null || echo "pass")
+        if [ "$gate_result" != "pass" ]; then
+          echo "[dispatch] 🔄 Quality gate FAILED for $tid → triggering reflexion (6.2)"
+          task_status="needs_revision"
+          # Trigger revision: create reflexion entry and mark for retry
+          if declare -f trigger_reflexion > /dev/null 2>&1; then
+            trigger_reflexion "$tid" "$RESULTS_DIR/${tid}.out" "$gate_result" 2>/dev/null || true
+          fi
+        fi
+      fi
+
+      # Generate structured completion report (status reflects quality gate result)
+      generate_report "$spec" "$tid" "$task_status" "$out_size" "$actual_duration" "$agent"
+      # SLO breach check — pass correct status
+      check_slo_breach "$tid" "$agent" "$actual_duration" "$task_status" "$spec"
       check_budget
 
       # Track cost (prompt_chars + output_chars estimate, 4 chars/token)

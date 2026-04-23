@@ -1,0 +1,18 @@
+name: doc-update
+description: Documentation generation + README update
+variables:
+  - TARGET_PATH
+  - DOC_TYPE
+tasks:
+  - id: "{BATCH_ID}-01-generate-docs"
+    agent: gemini
+    task_type: documentation
+    slo_duration_s: 240
+    prompt: "Generate {DOC_TYPE} documentation for {TARGET_PATH} with clear structure and examples."
+  - id: "{BATCH_ID}-02-update-readme"
+    agent: copilot
+    task_type: documentation
+    depends_on: ["{BATCH_ID}-01-generate-docs"]
+    slo_duration_s: 180
+    prompt: "Update README and related docs to integrate the generated {DOC_TYPE} content for {TARGET_PATH}."
+

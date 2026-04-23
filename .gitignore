@@ -26,3 +26,5 @@ mcp-server/node_modules/
 # Test results
 testing/
 coverage/
+
+./bin/deprecated/

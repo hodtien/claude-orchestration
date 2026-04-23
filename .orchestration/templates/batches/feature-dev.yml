@@ -1,0 +1,24 @@
+name: feature-dev
+description: Design -> Implement -> Review pipeline
+variables:
+  - FEATURE_NAME
+  - REQUIREMENTS
+tasks:
+  - id: "{BATCH_ID}-01-design"
+    agent: gemini
+    task_type: analysis
+    slo_duration_s: 300
+    prompt: "Design architecture and implementation steps for {FEATURE_NAME}. Requirements: {REQUIREMENTS}"
+  - id: "{BATCH_ID}-02-implement"
+    agent: copilot
+    task_type: code
+    depends_on: ["{BATCH_ID}-01-design"]
+    slo_duration_s: 600
+    prompt: "Implement {FEATURE_NAME} using the approved design and requirements: {REQUIREMENTS}"
+  - id: "{BATCH_ID}-03-review"
+    agent: copilot
+    task_type: review
+    depends_on: ["{BATCH_ID}-02-implement"]
+    slo_duration_s: 240
+    prompt: "Review the {FEATURE_NAME} implementation for correctness, quality, and edge cases."
+

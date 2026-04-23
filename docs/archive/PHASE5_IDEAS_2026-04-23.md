@@ -24,7 +24,7 @@ actually integrated into the main flow (`bin/task-dispatch.sh`) varies.
 | Cross-Project Transfer | `lib/cross-project.sh` + bin helpers | **Deprecated** | bin scripts moved; solo-dev use case doesn't need this |
 | Parallel Sprint | `lib/sprint-queue.sh` + bin helpers | **Deprecated** | bin scripts moved; complexity exceeds solo-dev need |
 | Speculation Buffer | `lib/speculation-buffer.sh` + bin helpers | **Deprecated** | bin scripts moved; only in breakthrough-ideas docs |
-| State Conflict Resolver | `lib/state-conflict-resolver.sh` | Drafted, not wired | No callers found; no deprecated bin refs either |
+| State Conflict Resolver | `lib/state-conflict-resolver.sh` | **DEPRECATED** → `lib/deprecated/` | No callers found
 | Discarded Alternatives | `lib/discarded-alternatives.sh` | **Deprecated** | Only in bin/deprecated/consensus-trigger.sh (commented) |
 | Style Memory | `lib/style-memory.sh` | **Deprecated** | Only in bin/deprecated/style-memory-*.sh (commented) |
 | Provenance Tracker | `lib/provenance-tracker.sh` | **Deprecated** | Only in bin/deprecated/provenance-*.sh (commented) |
@@ -38,7 +38,7 @@ Ordered by impact for solo-dev workflow:
 1. **Agent Failover** — `lib/agent-failover.sh` already wired; verify it fires on error
 2. **Cost Tracker** — `lib/cost-tracker.sh` already wired; verify rows appear in metrics.db
 3. **Intent Verifier** — `lib/intent-verifier.sh` already wired; verify it runs before dispatch
-4. **State Conflict Resolver** — `lib/state-conflict-resolver.sh` needs review: wire or shelve
+4. **State Conflict Resolver** — ~~needs review: wire or shelve~~ → **DEPRECATED 2026-04-23**: Moved to `lib/deprecated/state-conflict-resolver.sh`. No active callers. No further action needed.
 5. **Context Compression** — wire into task-dispatch when context budget becomes an issue
 6. **Self-Healing DAG** — wire when task-dispatch DAGs are stable enough to self-check
 7. **Consensus Voting** — wire when `parallel_policy.pick_strategy: consensus` is enabled

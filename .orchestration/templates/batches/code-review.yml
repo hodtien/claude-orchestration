@@ -1,0 +1,15 @@
+name: code-review
+description: Gemini architecture analysis + Copilot code quality review (parallel)
+variables:
+  - TARGET_PATH
+tasks:
+  - id: "{BATCH_ID}-01-arch-review"
+    agent: gemini
+    task_type: analysis
+    slo_duration_s: 300
+    prompt: "Analyse the architecture, patterns, and technical debt in {TARGET_PATH}."
+  - id: "{BATCH_ID}-02-code-quality"
+    agent: copilot
+    task_type: review
+    slo_duration_s: 180
+    prompt: "Review code quality, naming, error handling, and test coverage in {TARGET_PATH}."

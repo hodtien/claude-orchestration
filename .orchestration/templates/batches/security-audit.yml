@@ -1,0 +1,16 @@
+name: security-audit
+description: Threat model + dependency audit
+variables:
+  - TARGET_PATH
+tasks:
+  - id: "{BATCH_ID}-01-threat-model"
+    agent: gemini
+    task_type: security
+    slo_duration_s: 300
+    prompt: "Perform a threat model for {TARGET_PATH}. Identify attack surfaces, trust boundaries, and high-risk flows."
+  - id: "{BATCH_ID}-02-dependency-audit"
+    agent: gemini
+    task_type: security
+    slo_duration_s: 240
+    prompt: "Audit dependencies used by {TARGET_PATH} for known security risks and remediation priorities."
+
