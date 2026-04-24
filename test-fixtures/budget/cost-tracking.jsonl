@@ -1,0 +1,5 @@
+{"timestamp":"2026-04-24T08:01:00Z","agent":"copilot","batch_id":"b1","task_id":"budget-task-001","tokens_input":200,"tokens_output":100,"cost_usd":0,"duration_s":30}
+{"timestamp":"2026-04-24T09:01:00Z","agent":"copilot","batch_id":"b1","task_id":"budget-task-002","tokens_input":150,"tokens_output":80,"cost_usd":0,"duration_s":25}
+{"timestamp":"2026-04-24T10:01:00Z","agent":"oc-high","batch_id":"b2","task_id":"budget-task-003","tokens_input":600,"tokens_output":500,"cost_usd":0,"duration_s":45}
+{"timestamp":"2026-04-24T11:01:00Z","agent":"copilot","batch_id":"b2","task_id":"budget-task-004","tokens_input":100,"tokens_output":50,"cost_usd":0,"duration_s":20}
+{"timestamp":"2026-04-24T12:01:00Z","agent":"oc-high","batch_id":"b3","task_id":"budget-task-005","tokens_input":400,"tokens_output":350,"cost_usd":0,"duration_s":40}

@@ -13,6 +13,7 @@ case "$cmd" in
   slo)     source "$SCRIPT_DIR/_dashboard/slo.sh" "$@" ;;
   report)  source "$SCRIPT_DIR/_dashboard/report.sh" "$@" ;;
   db)      source "$SCRIPT_DIR/_dashboard/db.sh" "$@" ;;
+  budget)  source "$SCRIPT_DIR/_dashboard/budget.sh" "$@" ;;
   ""|help|--help|-h)
     cat <<EOF
 orch-dashboard.sh — unified dashboard
@@ -23,6 +24,7 @@ Subcommands:
   slo       SLO report (target KPIs: coverage>80%, 0 critical vulns)
   report    Generate HTML report
   db        Metrics DB admin (import|trends|compare|slow|rollup|status)
+  budget    Token budget utilization, burn rate, alerts. Flags: --json --since <duration> --model <name>
 
 Examples:
   orch-dashboard.sh cost --since 24h

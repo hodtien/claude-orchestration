@@ -1,0 +1,7 @@
+{"event":"tier_assigned","task_id":"budget-task-001","tier":"TIER_STANDARD","tokens_estimated":500,"timestamp":"2026-04-24T08:00:00Z"}
+{"event":"tier_assigned","task_id":"budget-task-002","tier":"TIER_STANDARD","tokens_estimated":300,"timestamp":"2026-04-24T09:00:00Z"}
+{"event":"tier_assigned","task_id":"budget-task-003","tier":"TIER_PREMIUM","tokens_estimated":1200,"timestamp":"2026-04-24T10:00:00Z"}
+{"event":"tier_assigned","task_id":"budget-task-004","tier":"TIER_STANDARD","tokens_estimated":200,"timestamp":"2026-04-24T11:00:00Z"}
+{"event":"tier_assigned","task_id":"budget-task-005","tier":"TIER_PREMIUM","tokens_estimated":800,"timestamp":"2026-04-24T12:00:00Z"}
+this is a malformed line that should be skipped
+{"event":"tier_assigned","task_id":"old-task-001","tier":"TIER_STANDARD","tokens_estimated":100,"timestamp":"2026-04-20T01:00:00Z"}

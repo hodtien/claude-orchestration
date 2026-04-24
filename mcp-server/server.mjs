@@ -397,6 +397,30 @@ function runTraceQuery(subcommand, args) {
   }
 }
 
+// ── budget helper (Phase 8.4) ──────────────────────────────────────────────
+function runBudgetDashboard(args) {
+  const helperPath = join(PROJECT_ROOT, "bin", "_dashboard", "budget.sh");
+  if (!existsSync(helperPath)) {
+    return { error: "bin/_dashboard/budget.sh not found" };
+  }
+  const budgetArgs = ["--json"];
+  if (args?.since) { budgetArgs.push("--since", args.since); }
+  if (args?.model) { budgetArgs.push("--model", args.model); }
+  try {
+    const result = spawnSync("bash", [helperPath, ...budgetArgs], {
+      encoding: "utf8",
+      timeout: 30000,
+      env: { ...process.env, PROJECT_ROOT },
+    });
+    if (result.status === 0 && result.stdout) {
+      return JSON.parse(result.stdout);
+    }
+    return { error: (result.stderr || "budget.sh failed").slice(0, 500) };
+  } catch (e) {
+    return { error: String(e).slice(0, 500) };
+  }
+}
+
 // ── MCP server setup ─────────────────────────────────────────────────────────
 const server = new Server(
   { name: "orch-notify", version: "1.0.0" },
@@ -483,6 +507,19 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: [],
       },
     },
+    {
+      name: "get_token_budget",
+      description:
+        "Fetch token budget utilization — tokens burned, budget limits, burn rate, projected exhaustion, and alerts. Reads audit.jsonl (estimated tokens) + cost-tracking.jsonl (actual tokens) + budget.yaml. Returns degraded=true when cost-log is absent.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          since: { type: "string", description: "Time window in Nh or Nd format (default: 24h)" },
+          model: { type: "string", description: "Filter to a specific model name (optional)" },
+        },
+        required: [],
+      },
+    },
   ],
 }));
 
@@ -522,6 +559,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       result = runTraceQuery("recent_failures", rfArgs);
       break;
     }
+    case "get_token_budget":
+      result = runBudgetDashboard(args);
+      break;
     default:
       return {
         content: [{ type: "text", text: `Unknown tool: ${name}` }],

@@ -1,0 +1,18 @@
+# Token budget configuration
+# Used by: orch-dashboard.sh budget, orch-notify get_token_budget
+
+global:
+  daily_token_limit: 500000       # total tokens/day across all models
+  alert_threshold_pct: 80         # warn when usage > this %
+  hard_cap_pct: 100               # block dispatch when exceeded (future: Phase 9)
+
+per_model:
+  # Override global limit per model. Omitted models share the global pool.
+  cc/claude-opus-4-6:
+    daily_limit: 100000
+  oc-high:
+    daily_limit: 150000
+
+reporting:
+  rollup_window: 24h              # default window for burn-rate calculation
+  history_days: 7                 # how many days of history to keep in budget view

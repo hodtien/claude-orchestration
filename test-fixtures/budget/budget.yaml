@@ -1,0 +1,13 @@
+# Test budget config
+global:
+  daily_token_limit: 5000
+  alert_threshold_pct: 80
+  hard_cap_pct: 100
+
+per_model:
+  oc-high:
+    daily_limit: 2000
+
+reporting:
+  rollup_window: 24h
+  history_days: 7
