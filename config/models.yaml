@@ -250,6 +250,7 @@ parallel_policy:
   max_parallel: 3
   cancel_slower_on_first_success: true
   timeout_per_model_sec: 120
+  sim_threshold: 0.3
 router_hints:
   round_robin_accounts: true
   respect_quota: true

@@ -4,7 +4,7 @@
 # Goal: confirm consensus_merge (Jaccard clustering), get_weight, compute_score,
 # and find_winner behave as expected after Phase 7.1c implementation.
 #
-# 8 tests: Tests 1-5 (7.1a scaffold), Tests 6-8 (7.1c Jaccard merge)
+# 10 tests: Tests 1-5 (7.1a scaffold), Tests 6-8 (7.1c Jaccard merge), Tests 9-10 (7.1d sim_threshold)
 #
 # Usage:
 #   bin/test-consensus.sh                # run all tests
@@ -190,6 +190,35 @@ if [[ $LENGTH -gt 50 ]]; then
   assert_pass "winner is longer candidate ($LENGTH chars)"
 else
   assert_fail "winner too short: $LENGTH chars" "expected > 50"
+fi
+
+# ── Test 9: SIM_THRESHOLD=0.9 should NOT cluster similar pair ──────────────────
+echo ""
+echo "Test 9: consensus_merge with SIM_THRESHOLD=0.9 — similar pair should NOT cluster"
+FIXTURE_SIMILAR='[
+  {"agent_id":"a","output":"the quick brown fox jumps over the lazy dog","confidence":1.0},
+  {"agent_id":"b","output":"the quick brown fox jumps over the lazy dog today","confidence":1.0}
+]'
+RESULT=$(SIM_THRESHOLD=0.9 consensus_merge "$FIXTURE_SIMILAR")
+SCORE=$(echo "$RESULT" | head -n 1)
+[[ "$VERBOSE" == "true" ]] && echo "    score = $SCORE (threshold=0.9)"
+if [[ "$SCORE" == "0.000" ]]; then
+  assert_pass "threshold 0.9: similar pair NOT clustered (score=$SCORE)"
+else
+  assert_fail "threshold 0.9: expected no clustering but got score=$SCORE"
+fi
+
+# ── Test 10: default threshold 0.3 SHOULD cluster similar pair ─────────────────
+echo ""
+echo "Test 10: default threshold 0.3 clusters similar pair"
+unset SIM_THRESHOLD
+RESULT=$(consensus_merge "$FIXTURE_SIMILAR")
+SCORE=$(echo "$RESULT" | head -n 1)
+[[ "$VERBOSE" == "true" ]] && echo "    score = $SCORE (default threshold 0.3)"
+if [[ "$SCORE" != "0.000" ]]; then
+  assert_pass "threshold 0.3 default: similar pair clustered (score=$SCORE)"
+else
+  assert_fail "threshold 0.3: expected clustering but got score=$SCORE"
 fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────

@@ -229,6 +229,111 @@ else
   assert_fail "consensus dispatch produced no result file"
 fi
 
+# ── Test 7: all-fail triggers reflexion + re-dispatch ─────────────────────────
+echo ""
+echo "Test 7: all-fail consensus triggers reflexion v1"
+
+setup_batch "test-reflexion-all-fail"
+
+cat > "$BATCH_DIR/task-reflex-001.md" <<'TASKEOF'
+---
+id: reflex-test-001
+agent: gemini-pro
+task_type: design_api
+---
+Design a simple pub/sub system.
+TASKEOF
+
+# Mock all agents to fail
+export MOCK_EXIT_gemini_pro=1
+export MOCK_EXIT_cc_claude_sonnet_4_6=1
+export MOCK_EXIT_minimax_code=1
+export MOCK_OUTPUT_gemini_pro=""
+export MOCK_OUTPUT_cc_claude_sonnet_4_6=""
+export MOCK_OUTPUT_minimax_code=""
+export AGENT_SH_MOCK="$MOCK_AGENT"
+
+# NOTE: quality-gate.sh defaults ORCH_DIR to $HOME/.claude/orchestration
+# All reflexion files are written there, not under $PROJECT_ROOT
+HOME_ORCH_DIR="${HOME}/.claude/orchestration"
+REFLEXION_DIR="$HOME_ORCH_DIR/reflexions"
+rm -rf "$REFLEXION_DIR/reflex-test-001.v*.reflexion.json" 2>/dev/null || true
+mkdir -p "$REFLEXION_DIR"
+
+bash "$BIN_DISPATCH" "$BATCH_DIR" --sequential 2>&1 | head -80 > /tmp/dispatch-reflex.$$.log || true
+[[ "$VERBOSE" == "true" ]] && cat /tmp/dispatch-reflex.$$.log
+rm -f /tmp/dispatch-reflex.$$.log
+
+if [ -f "$REFLEXION_DIR/reflex-test-001.v1.reflexion.json" ]; then
+  assert_pass "all-fail: reflexion v1 JSON created"
+else
+  assert_fail "all-fail: reflexion v1 JSON NOT found"
+fi
+
+unset MOCK_EXIT_gemini_pro MOCK_EXIT_cc_claude_sonnet_4_6 MOCK_EXIT_minimax_code
+
+# ── Test 8: disagreement triggers reflexion + enriched prompt ──────────────────
+echo ""
+echo "Test 8: disagreement (score=0) triggers reflexion with peer output enrichment"
+
+setup_batch "test-reflexion-disagree"
+
+cat > "$BATCH_DIR/task-disagree-001.md" <<'TASKEOF'
+---
+id: disagree-test-001
+agent: gemini-pro
+task_type: design_api
+---
+Design a pub/sub system.
+TASKEOF
+
+# Mock 3 agents with fully disjoint outputs (Jaccard = 0)
+export MOCK_OUTPUT_gemini_pro="design a distributed pub sub broker with message queues"
+export MOCK_OUTPUT_cc_claude_sonnet_4_6="implement a webhook event notification system with callbacks"
+export MOCK_OUTPUT_minimax_code="build a simple observer pattern library in python"
+export MOCK_EXIT_gemini_pro=0
+export MOCK_EXIT_cc_claude_sonnet_4_6=0
+export MOCK_EXIT_minimax_code=0
+export AGENT_SH_MOCK="$MOCK_AGENT"
+
+rm -rf "$REFLEXION_DIR/disagree-test-001.v*.reflexion.json" 2>/dev/null || true
+rm -f "$RESULTS_DIR/disagree-test-001.out" "$RESULTS_DIR/disagree-test-001.consensus.json" 2>/dev/null || true
+
+bash "$BIN_DISPATCH" "$BATCH_DIR" --sequential 2>&1 | head -80 > /tmp/dispatch-disagree.$$.log || true
+[[ "$VERBOSE" == "true" ]] && cat /tmp/dispatch-disagree.$$.log
+rm -f /tmp/dispatch-disagree.$$.log
+
+if [ -f "$REFLEXION_DIR/disagree-test-001.v1.reflexion.json" ]; then
+  assert_pass "disagreement: reflexion v1 JSON created (score=0 triggered)"
+else
+  assert_fail "disagreement: reflexion v1 JSON NOT found"
+fi
+
+unset MOCK_OUTPUT_gemini_pro MOCK_OUTPUT_cc_claude_sonnet_4_6 MOCK_OUTPUT_minimax_code
+unset MOCK_EXIT_gemini_pro MOCK_EXIT_cc_claude_sonnet_4_6 MOCK_EXIT_minimax_code
+
+# ── Test 9: exhaustion marker after 2 reflexion attempts ───────────────────────
+echo ""
+echo "Test 9: second reflexion round creates exhausted/failed marker"
+
+if [ -f "$RESULTS_DIR/disagree-test-001.consensus.json" ]; then
+  strategy=$(python3 -c "import json; d=json.load(open('$RESULTS_DIR/disagree-test-001.consensus.json')); print(d.get('strategy_used','?'))" 2>/dev/null || echo "?")
+  if [[ "$strategy" == "consensus_exhausted" ]]; then
+    assert_pass "exhaustion: consensus_exhausted strategy recorded"
+  else
+    assert_fail "exhaustion: strategy was '$strategy', expected consensus_exhausted"
+  fi
+else
+  has_marker=false
+  [ -f "$RESULTS_DIR/disagree-test-001.exhausted" ] && has_marker=true
+  [ -f "$RESULTS_DIR/disagree-test-001.failed" ] && has_marker=true
+  if $has_marker; then
+    assert_pass "exhaustion: .exhausted or .failed marker created"
+  else
+    assert_fail "exhaustion: no marker found"
+  fi
+fi
+
 # ── Summary ─────────────────────────────────────────────────────────────────
 echo ""
 echo "------------------------------------------"

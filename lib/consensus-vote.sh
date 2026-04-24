@@ -88,15 +88,15 @@ find_winner() {
 #   <consensus_score>  (avg pairwise Jaccard within winning cluster)
 #   <winner_output_text>
 #
-# SIM_THRESHOLD=0.5: pairs with similarity >= 0.5 cluster together.
+# SIM_THRESHOLD env var overrides default threshold (0.3).
 # Lower threshold = more forgiving clustering.
 consensus_merge() {
  local candidates_json="${1:?candidates_json required}"
  python3 - "$candidates_json" <<'PYEOF'
-import sys, json, re
+import sys, json, re, os
 
 candidates = json.loads(sys.argv[1])
-THRESHOLD = 0.5
+THRESHOLD = float(os.environ.get("SIM_THRESHOLD", "0.3"))
 
 if not candidates:
     print("0.0")

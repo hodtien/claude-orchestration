@@ -61,11 +61,12 @@ fi
 PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 ORCH_DIR="$PROJECT_ROOT/.orchestration"
 RESULTS_DIR="$ORCH_DIR/results"
+TASKS_DIR="$ORCH_DIR/tasks"
 INBOX_DIR="$ORCH_DIR/inbox"
 DLQ_DIR="$ORCH_DIR/dlq"
 PIDS_DIR="$ORCH_DIR/pids"
 LOG_FILE="$ORCH_DIR/tasks.jsonl"
-mkdir -p "$RESULTS_DIR" "$INBOX_DIR" "$PIDS_DIR"
+mkdir -p "$RESULTS_DIR" "$INBOX_DIR" "$PIDS_DIR" "$TASKS_DIR"
 
 BATCH_ID="$(basename "$BATCH_DIR")"
 BATCH_CONF="$BATCH_DIR/batch.conf"
@@ -965,10 +966,21 @@ dispatch_task_consensus() {
 
  echo "[consensus] $tid → $successful_count/${#candidates_list[@]} successful"
 
- # Failure mode: no candidates succeeded
+ # Failure mode: no candidates succeeded → reflexion if iterations remain
  if [ "$successful_count" -eq 0 ]; then
-   echo "[consensus] FAIL: $tid — all $successful_count candidates failed"
-   return 1
+   local iter
+   iter=$(consensus_iteration_count "$tid")
+   if [ "$iter" -lt 2 ]; then
+     echo "[consensus] $tid → FAIL (no survivors), triggering reflexion v$((iter+1))"
+     trigger_reflexion "$tid" "no_survivors" "all candidates failed"
+     redispatch_consensus "$spec" "$task_type" "$((iter+1))"
+     return $?
+   else
+     echo "[consensus] $tid → EXHAUSTED after 2 reflexion attempts"
+     : > "$RESULTS_DIR/${tid}.failed"
+     write_consensus_json_exhausted "$tid" "$task_type" 0 0.0
+     return 1
+   fi
  fi
 
  # Single candidate success: verbatim copy (no merge needed)
@@ -1018,6 +1030,12 @@ PYEOF
  # Multiple candidates: invoke consensus_merge
  echo "[consensus] $tid → $successful_count candidates → consensus_merge"
 
+ # Read sim_threshold from models.yaml and export for consensus_merge
+ local sim_threshold
+ sim_threshold=$(yq -r ".parallel_policy.sim_threshold // 0.3" "$MODELS_YAML" 2>/dev/null)
+ export SIM_THRESHOLD="$sim_threshold"
+ echo "[consensus] $tid → SIM_THRESHOLD=$SIM_THRESHOLD"
+
  # Build candidates JSON for consensus_merge
  local candidates_json="["
  local first=true
@@ -1052,6 +1070,23 @@ print(json.dumps(sys.stdin.read()))
    merged_output="${agent_output[$winner_agent]}"
  else
    winner_agent="merged"
+ fi
+
+ # Reflexion trigger: 2+ candidates but total disagreement (score=0)
+ if [ "$successful_count" -ge 2 ] && [ "$computed_score" = "0.000" ]; then
+   local iter
+   iter=$(consensus_iteration_count "$tid")
+   if [ "$iter" -lt 2 ]; then
+     echo "[consensus] $tid → FAIL (disagreement, score=0), triggering reflexion v$((iter+1))"
+     trigger_reflexion "$tid" "disagreement" "candidates produced no overlapping vocabulary"
+     redispatch_consensus "$spec" "$task_type" "$((iter+1))"
+     return $?
+   else
+     echo "[consensus] $tid → EXHAUSTED after 2 attempts, best effort"
+     : > "$RESULTS_DIR/${tid}.exhausted"
+     write_consensus_json_exhausted "$tid" "$task_type" "$successful_count" "$computed_score"
+     return 0
+   fi
  fi
 
  printf '%s' "$merged_output" > "$RESULTS_DIR/${tid}.out"
@@ -1094,6 +1129,78 @@ PYEOF
  echo "[consensus] $tid → DONE (merged output: ${result_size} bytes, winner=$winner_agent)"
 
  return 0
+}
+
+# ── reflexion helpers for consensus loop (Phase 7.1d) ──────────────────────────
+
+# Count existing vN.reflexion.json files for a task
+consensus_iteration_count() {
+ local tid="$1"
+ find "$REFLEXION_DIR" -name "${tid}.v*.reflexion.json" 2>/dev/null | wc -l | tr -d ' '
+}
+
+# Build a re-dispatch prompt with peer outputs as context
+build_revision_prompt() {
+ local tid="$1" original_body="$2" iteration="$3"
+ local candidates_dir="$RESULTS_DIR/${tid}.candidates"
+
+ local prompt="CONSENSUS REVISION (attempt $iteration of 2):"
+ prompt+=$'\n'"Previous candidates disagreed. Review peer outputs below and produce"
+ prompt+=$'\n'"a reconciled answer that addresses the common ground."
+ prompt+=$'\n\n'
+
+ for f in "$candidates_dir"/*.out; do
+   [ -f "$f" ] || continue
+   local agent_name head
+   agent_name=$(basename "$f" .out)
+   head=$(head -c 2000 "$f")
+   prompt+="--- Peer output: $agent_name ---"$'\n'
+   prompt+="$head"$'\n\n'
+ done
+
+ prompt+="--- Original task ---"$'\n'
+ prompt+="$original_body"
+ echo "$prompt"
+}
+
+# Write exhausted consensus JSON
+write_consensus_json_exhausted() {
+ local tid="$1" task_type="$2" count="$3" score="$4"
+ python3 - "$tid" "$task_type" "$count" "$score" <<'PYEOF' > "$RESULTS_DIR/${tid}.consensus.json"
+import sys, json, datetime
+_, tid, task_type, count, score = sys.argv
+print(json.dumps({
+  "task_id": tid,
+  "task_type": task_type,
+  "successful_count": int(count),
+  "consensus_score": float(score),
+  "strategy_used": "consensus_exhausted",
+  "timestamp": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+}, indent=2))
+PYEOF
+}
+
+# Re-dispatch with enriched prompt
+redispatch_consensus() {
+ local spec="$1" task_type="$2" iteration="$3"
+ local tid body revision_prompt revision_spec
+ tid=$(parse_front "$spec" "id" "unknown")
+ body=$(parse_body "$spec")
+
+ revision_prompt=$(build_revision_prompt "$tid" "$body" "$iteration")
+
+ revision_spec="$TASKS_DIR/${tid}.v${iteration}.revision.md"
+ {
+   echo "---"
+   echo "id: $tid"
+   echo "task_type: $task_type"
+   echo "iteration: $iteration"
+   echo "---"
+   echo "$revision_prompt"
+ } > "$revision_spec"
+
+ echo "[consensus] re-dispatch $tid iteration $iteration"
+ dispatch_task_consensus "$revision_spec" "$task_type"
 }
 
 # ── dispatch one task (router — Phase 7.1b) ────────────────────────────────────
