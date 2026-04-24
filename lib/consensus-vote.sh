@@ -86,11 +86,13 @@ consensus_merge() {
     echo "$candidates_json" | jq -r '.[0].output // ""'
 }
 
-# Main
-case "${1:-}" in
-    weight)    shift; get_weight "$@" ;;
-    score)     shift; compute_score "$@" ;;
-    winner)    shift; find_winner "$@" ;;
-    merge)     shift; consensus_merge "$@" ;;
-    *)         echo "Usage: $0 weight|score|winner|merge" >&2; exit 1 ;;
-esac
+# Main — only run dispatch when executed directly (not sourced)
+if [[ "${BASH_SOURCE[0]:-}" == "${0}" ]]; then
+  case "${1:-}" in
+      weight)    shift; get_weight "$@" ;;
+      score)     shift; compute_score "$@" ;;
+      winner)    shift; find_winner "$@" ;;
+      merge)     shift; consensus_merge "$@" ;;
+      *)         echo "Usage: $0 weight|score|winner|merge" >&2; exit 1 ;;
+  esac
+fi
