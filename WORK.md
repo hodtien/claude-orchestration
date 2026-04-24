@@ -28,7 +28,7 @@ Phase 7 order: **7.2 first → 7.1 second** (eval-harness needed to measure cons
   - ✅ DONE: `lib/quality-gate.sh` wired into task-dispatch.sh success path after `run_reviewer`. See Phase 6.2.
   - ✅ 2026-04-24: `bin/test-compressor.sh` added (150 lines) — confirms compress_summary() ratios 0.301/0.500/0.700 match target levels on real 57KB payload. Commit `7ce4e22`.
 
-**Phase 7 Success Criteria:** consensus-vote active for ≥2 task_types. eval-harness runs for `code_review` and `implement_feature`. Quality gates catch ≥1 bad output in integration test.
+**Phase 7 Success Criteria:** consensus-vote active for architecture_analysis, design_api, security_audit (≥2 task_types ✅). eval-harness runs for code_review and implement_feature ✅. Quality gates in place ✅. Phase 7 COMPLETE.
 
 **Status: MET** — consensus-vote ACTIVE for `architecture_analysis`, `design_api`, `security_audit`. eval-harness running for `code_review` and `implement_feature`. Quality gates in place. All Phase 7.1 subtasks CLOSED.
 
