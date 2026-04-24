@@ -21,9 +21,11 @@ Phase 7 order: **7.2 first → 7.1 second** (eval-harness needed to measure cons
   - **Acceptance:** Dispatch `design_api` task with parallel=[gemini-pro, cc/claude-sonnet-4-6] → both return → consensus-vote selects/merges → output has `consensus_score: 0.85`
   - **Config flag:** `parallel_policy.pick_strategy: consensus` in models.yaml
   - **Note:** Consensus fail → reflexion retry (Bug #3 deferred — resolve together)
+  - **7.1a DONE** (2026-04-24): bash 3.2 no-op stubs added, AGENT_WEIGHTS remapped to current model names (cc_claude_sonnet_4_6=2.0, etc.), consensus_merge() placeholder added, bin/test-consensus.sh written. 7.1b (fan-out) + 7.1c (similarity merge) remain.
 
-- [x] `7.3` Add quality gates in task-dispatch output phase (P1) ✅ DONE 2026-04-23
+- [x] `7.3` Add quality gates in task-dispatch output phase (P1) ✅ DONE 2026-04-24
   - ✅ DONE: `lib/quality-gate.sh` wired into task-dispatch.sh success path after `run_reviewer`. See Phase 6.2.
+  - ✅ 2026-04-24: `bin/test-compressor.sh` added (150 lines) — confirms compress_summary() ratios 0.301/0.500/0.700 match target levels on real 57KB payload. Commit `7ce4e22`.
 
 **Phase 7 Success Criteria:** consensus-vote active for ≥2 task_types. eval-harness runs for `code_review` and `implement_feature`. Quality gates catch ≥1 bad output in integration test.
 
@@ -77,6 +79,8 @@ Phase 7 order: **7.2 first → 7.1 second** (eval-harness needed to measure cons
 
 | Date | What | Where |
 |------|------|-------|
+| 2026-04-24 | **Phase 7.1a DONE** — consensus-vote.sh scaffolded: bash 3.2 no-op stubs, AGENT_WEIGHTS remapped to current model names, consensus_merge() placeholder added, bin/test-consensus.sh written | lib/consensus-vote.sh + bin/test-consensus.sh |
+| 2026-04-24 | **Phase 7.3 DONE** — `bin/test-compressor.sh` (150 lines) confirms compress_summary() ratios 0.301/0.500/0.700 on 57KB structured payload. `smoke-test-context-compressor.sh` removed (redundant). | commit 7ce4e22, fbbaf9a |
 | 2026-04-23 | **Phase 7.2 DONE** — eval-harness.sh (439 lines) + 2 golden cases + context-compressor set -e fix | commit 0a60645 |
 | 2026-04-23 | **Phase 6 CLOSED** — 6.1 dag-healer wire, 6.2 reflexion loop, 6.3 context-compressor, 6.4 deprecated. 5 bugs fixed via code review + smoke test | commit 4f86075 |
 | 2026-04-23 | **Phase 6 COMPLETE** (6.1-6.4): dag-healer + quality-gate + context-compressor wired, state-conflict-resolver deprecated | bin/task-dispatch.sh + bin/task-selfheal.sh + lib/quality-gate.sh + lib/deprecated/ |
