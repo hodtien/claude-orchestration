@@ -98,6 +98,7 @@ Phase 7 order: **7.2 first → 7.1 second** (eval-harness needed to measure cons
 
 | Date | What | Where |
 |------|------|-------|
+| 2026-04-24 | **Phase 8.3 DONE** — orch-notify trace viewer: 3 new MCP tools (get_task_trace, get_trace_waterfall, recent_failures), lib/trace-query.sh (python3 in-process, 3 ops), test-fixtures/trace/ (7 files), bin/test-trace-query.sh (36 tests PASS), server.mjs updated. Thin delegation pattern, no new deps, no regression. | lib/trace-query.sh, bin/test-trace-query.sh, mcp-server/server.mjs, test-fixtures/trace/*, docs/PROMPT_phase8.3.md |
 | 2026-04-24 | **Phase 8.2 DONE** — orch-metrics.sh rollup subcommand: .status.json aggregation by task_type × strategy_used, consensus score distribution, reflexion histogram. 27 tests PASS, 0.046s runtime, no regression in event-log mode. Spec archived. | bin/orch-metrics.sh, bin/test-orch-metrics-rollup.sh, test-fixtures/metrics/*, docs/archive/PROMPT_phase8.2_2026-04-24.md |
 | 2026-04-24 | **Phase 8.1 DONE** — unified task status JSON: lib/task-status.sh, 7 terminal points wired, schema v1, 5 tests PASS, macOS BSD date fix | commit 7f59a73, 1ac531b |
 | 2026-04-24 | **Phase 7.1 COMPLETE** — consensus-vote wired: 7.1a scaffold, 7.1b fan-out dispatch, 7.1c Jaccard similarity merge, 7.1d reflexion loop. 11+9 tests PASS, integration smoke PASS | commits d2a3214, 0c30527, 641a8db, eb2ea71, 12a57fd, d72aa95 |
