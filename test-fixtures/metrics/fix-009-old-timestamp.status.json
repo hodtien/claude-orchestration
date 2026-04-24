@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "task_id": "fix-009",
+  "task_type": "architecture_analysis",
+  "strategy_used": "consensus",
+  "final_state": "done",
+  "output_file": "fix-009.out",
+  "output_bytes": 100,
+  "winner_agent": "merged",
+  "candidates_tried": ["gemini-pro"],
+  "successful_candidates": ["gemini-pro"],
+  "consensus_score": 0.85,
+  "reflexion_iterations": 0,
+  "markers": [],
+  "duration_sec": 10.0,
+  "started_at": "2026-04-01T06:00:00Z",
+  "completed_at": "2026-04-01T06:00:10Z"
+}

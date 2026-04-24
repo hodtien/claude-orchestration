@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "task_id": "fix-002",
+  "task_type": "implement_feature",
+  "strategy_used": "consensus",
+  "final_state": "done",
+  "output_file": "fix-002.out",
+  "output_bytes": 1024,
+  "winner_agent": "merged",
+  "candidates_tried": ["gemini-pro", "cc/claude-sonnet-4-6"],
+  "successful_candidates": ["gemini-pro", "cc/claude-sonnet-4-6"],
+  "consensus_score": 0.55,
+  "reflexion_iterations": 1,
+  "markers": [],
+  "duration_sec": 20.0,
+  "started_at": "2026-04-24T08:01:00Z",
+  "completed_at": "2026-04-24T08:01:20Z"
+}

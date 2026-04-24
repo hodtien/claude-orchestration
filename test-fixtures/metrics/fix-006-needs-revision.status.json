@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "task_id": "fix-006",
+  "task_type": "code_review",
+  "strategy_used": "consensus",
+  "final_state": "needs_revision",
+  "output_file": "fix-006.out",
+  "output_bytes": 300,
+  "winner_agent": "merged",
+  "candidates_tried": ["gemini-pro", "cc/claude-sonnet-4-6", "minimax-code"],
+  "successful_candidates": ["gemini-pro", "cc/claude-sonnet-4-6"],
+  "consensus_score": 0.31,
+  "reflexion_iterations": 2,
+  "markers": [".needs_revision"],
+  "duration_sec": 30.0,
+  "started_at": "2026-04-24T08:05:00Z",
+  "completed_at": "2026-04-24T08:05:30Z"
+}

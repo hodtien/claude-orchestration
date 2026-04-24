@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "task_id": "fix-005",
+  "task_type": "implement_feature",
+  "strategy_used": "failed",
+  "final_state": "failed",
+  "output_file": "fix-005.out",
+  "output_bytes": 0,
+  "winner_agent": null,
+  "candidates_tried": ["gemini-pro", "cc/claude-sonnet-4-6"],
+  "successful_candidates": [],
+  "consensus_score": 0.0,
+  "reflexion_iterations": 0,
+  "markers": [".failed"],
+  "duration_sec": 3.0,
+  "started_at": "2026-04-24T08:04:00Z",
+  "completed_at": "2026-04-24T08:04:03Z"
+}

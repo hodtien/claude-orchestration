@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "task_id": "fix-001",
+  "task_type": "architecture_analysis",
+  "strategy_used": "consensus",
+  "final_state": "done",
+  "output_file": "fix-001.out",
+  "output_bytes": 512,
+  "winner_agent": "merged",
+  "candidates_tried": ["gemini-pro", "cc/claude-sonnet-4-6", "minimax-code"],
+  "successful_candidates": ["gemini-pro", "cc/claude-sonnet-4-6", "minimax-code"],
+  "consensus_score": 0.72,
+  "reflexion_iterations": 0,
+  "markers": [],
+  "duration_sec": 14.5,
+  "started_at": "2026-04-24T08:00:00Z",
+  "completed_at": "2026-04-24T08:00:14Z"
+}

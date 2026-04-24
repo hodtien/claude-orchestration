@@ -2,16 +2,266 @@
 # orch-metrics.sh — Aggregate metrics from orchestration audit log
 #
 # Usage:
-#   orch-metrics.sh                  # full dashboard
-#   orch-metrics.sh --json           # machine-readable JSON
-#   orch-metrics.sh --since 24h      # last 24 hours only
-#   orch-metrics.sh --agent gemini   # filter by agent
+#   orch-metrics.sh                       # full dashboard (event-log)
+#   orch-metrics.sh --json                # machine-readable JSON (event-log)
+#   orch-metrics.sh --since 24h           # last 24 hours only (event-log)
+#   orch-metrics.sh --agent gemini        # filter by agent (event-log)
 #
-# Reads: <project>/.orchestration/tasks.jsonl
+#   orch-metrics.sh rollup                # .status.json rollup (human-readable)
+#   orch-metrics.sh rollup --json         # .status.json rollup (machine JSON)
+#   orch-metrics.sh rollup --since 24h    # filter by completed_at
+#   orch-metrics.sh rollup --dir <path>   # override results dir
+#
+# Reads: <project>/.orchestration/tasks.jsonl  (event-log mode)
+#        <project>/.orchestration/results/     (rollup mode)
 
 set -euo pipefail
 
 PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
+# ── rollup subcommand dispatch ────────────────────────────────────────────────
+if [ "${1:-}" = "rollup" ]; then
+  shift
+  ROLLUP_JSON=false
+  ROLLUP_SINCE=""
+  ROLLUP_DIR="$PROJECT_ROOT/.orchestration/results"
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --json)  ROLLUP_JSON=true; shift ;;
+      --since) ROLLUP_SINCE="$2"; shift 2 ;;
+      --dir)   ROLLUP_DIR="$2"; shift 2 ;;
+      --help|-h)
+        echo "Usage: orch-metrics.sh rollup [--json] [--since <Nh|Nd>] [--dir <path>]"
+        exit 0 ;;
+      *) shift ;;
+    esac
+  done
+
+  python3 - "$ROLLUP_DIR" "$ROLLUP_JSON" "$ROLLUP_SINCE" <<'ROLLUP_PYEOF'
+import json, sys, os, glob
+from datetime import datetime, timezone, timedelta
+from collections import defaultdict
+
+results_dir = sys.argv[1]
+output_json = sys.argv[2].lower() == "true"
+since_arg   = sys.argv[3]
+
+# Parse time filter
+cutoff = None
+if since_arg:
+    val = since_arg.replace("h", "").replace("d", "")
+    try:
+        h = int(val)
+        if "d" in since_arg:
+            h *= 24
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=h)
+    except ValueError:
+        print(f"[rollup] WARNING: cannot parse --since '{since_arg}', ignoring", file=sys.stderr)
+
+# Collect .status.json files
+pattern = os.path.join(results_dir, "*.status.json")
+status_files = sorted(glob.glob(pattern))
+
+files_scanned      = len(status_files)
+schema_v1_valid    = 0
+schema_invalid     = 0
+records            = []
+
+for fpath in status_files:
+    try:
+        with open(fpath) as f:
+            data = json.load(f)
+    except Exception:
+        schema_invalid += 1
+        continue
+
+    if data.get("schema_version") != 1:
+        print(f"[rollup] WARNING: skipping {os.path.basename(fpath)} — schema_version={data.get('schema_version')}", file=sys.stderr)
+        schema_invalid += 1
+        continue
+
+    # Apply --since filter on completed_at
+    if cutoff:
+        completed_at = data.get("completed_at", "")
+        try:
+            ts = datetime.strptime(completed_at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+            if ts < cutoff:
+                continue
+        except (ValueError, TypeError):
+            pass  # unparseable → include when no filter, exclude when filter active
+            if cutoff:
+                continue
+
+    schema_v1_valid += 1
+    records.append(data)
+
+unique_tasks = len(set(r.get("task_id", "") for r in records))
+
+# ── Aggregate by task_type × strategy_used ────────────────────────────────────
+by_task_type = defaultdict(lambda: defaultdict(lambda: {
+    "count": 0, "success": 0, "total_duration": 0.0, "total_score": 0.0, "score_count": 0
+}))
+
+final_state_counts = defaultdict(int)
+reflexion_hist     = defaultdict(int)
+score_buckets      = {"0.0-0.2": 0, "0.2-0.4": 0, "0.4-0.6": 0, "0.6-0.8": 0, "0.8-1.0": 0}
+CONSENSUS_STRATEGIES = {"consensus", "consensus_exhausted"}
+
+for r in records:
+    tt  = r.get("task_type", "unknown")
+    st  = r.get("strategy_used", "unknown")
+    fs  = r.get("final_state", "unknown")
+    dur = float(r.get("duration_sec", 0.0) or 0.0)
+    csc = float(r.get("consensus_score", 0.0) or 0.0)
+    ref = int(r.get("reflexion_iterations", 0) or 0)
+
+    bucket = by_task_type[tt][st]
+    bucket["count"]          += 1
+    bucket["total_duration"] += dur
+    if fs == "done":
+        bucket["success"] += 1
+    if st in CONSENSUS_STRATEGIES:
+        bucket["total_score"] += csc
+        bucket["score_count"] += 1
+
+    final_state_counts[fs] += 1
+
+    # Reflexion histogram
+    if ref >= 3:
+        reflexion_hist["3+"] += 1
+    else:
+        reflexion_hist[str(ref)] += 1
+
+    # Consensus score distribution
+    if st in CONSENSUS_STRATEGIES:
+        if csc < 0.2:
+            score_buckets["0.0-0.2"] += 1
+        elif csc < 0.4:
+            score_buckets["0.2-0.4"] += 1
+        elif csc < 0.6:
+            score_buckets["0.4-0.6"] += 1
+        elif csc < 0.8:
+            score_buckets["0.6-0.8"] += 1
+        else:
+            score_buckets["0.8-1.0"] += 1
+
+# ── Build output structures ───────────────────────────────────────────────────
+by_task_type_out = {}
+for tt, strategies in sorted(by_task_type.items()):
+    total_tt   = sum(s["count"]   for s in strategies.values())
+    success_tt = sum(s["success"] for s in strategies.values())
+    sr         = round(success_tt / total_tt * 100, 1) if total_tt > 0 else 0.0
+
+    by_strategy_out = {}
+    for st, s in sorted(strategies.items()):
+        avg_dur   = round(s["total_duration"] / s["count"], 1) if s["count"] > 0 else 0.0
+        avg_score = round(s["total_score"] / s["score_count"], 2) if s["score_count"] > 0 else 0.0
+        by_strategy_out[st] = {
+            "count":            s["count"],
+            "success":          s["success"],
+            "avg_duration_sec": avg_dur,
+            "avg_consensus_score": avg_score,
+        }
+
+    by_task_type_out[tt] = {
+        "total":            total_tt,
+        "success_rate_pct": sr,
+        "by_strategy":      by_strategy_out,
+    }
+
+generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+result = {
+    "schema_version": 1,
+    "generated_at":   generated_at,
+    "source_dir":     results_dir,
+    "filter": {
+        "since":     since_arg or None,
+        "task_type": None,
+        "strategy":  None,
+    },
+    "totals": {
+        "status_files_scanned":          files_scanned,
+        "schema_v1_valid":               schema_v1_valid,
+        "schema_invalid_or_unreadable":  schema_invalid,
+        "unique_tasks":                  unique_tasks,
+    },
+    "by_task_type": by_task_type_out,
+    "consensus_score_distribution": {
+        "buckets": [
+            {"range": k, "count": v} for k, v in score_buckets.items()
+        ],
+        "note": "only tasks with strategy_used in {consensus, consensus_exhausted}",
+    },
+    "reflexion_iterations_histogram": {
+        "0":   reflexion_hist.get("0", 0),
+        "1":   reflexion_hist.get("1", 0),
+        "2":   reflexion_hist.get("2", 0),
+        "3+":  reflexion_hist.get("3+", 0),
+    },
+    "final_state_counts": dict(final_state_counts),
+}
+
+# ── Output ────────────────────────────────────────────────────────────────────
+if output_json:
+    print(json.dumps(result, indent=2))
+else:
+    total_valid   = result["totals"]["schema_v1_valid"]
+    total_invalid = result["totals"]["schema_invalid_or_unreadable"]
+
+    print("=" * 60)
+    print("  ORCHESTRATION ROLLUP (.status.json)")
+    print("=" * 60)
+    print(f"  Source:  {results_dir}")
+    print(f"  Scanned: {files_scanned} files ({total_valid} valid schema v1, {total_invalid} skipped)")
+    if since_arg:
+        print(f"  Filter:  last {since_arg}")
+    print()
+
+    # Final state
+    print("── Final State ──────────────────────────────────────────")
+    fs_total = sum(final_state_counts.values()) or 1
+    for state in ("done", "exhausted", "failed", "needs_revision"):
+        cnt = final_state_counts.get(state, 0)
+        pct = cnt / fs_total * 100
+        print(f"  {state:<16s}  {cnt:4d}  ({pct:5.1f}%)")
+    # unknown states
+    for state, cnt in sorted(final_state_counts.items()):
+        if state not in ("done", "exhausted", "failed", "needs_revision"):
+            pct = cnt / fs_total * 100
+            print(f"  {state:<16s}  {cnt:4d}  ({pct:5.1f}%)")
+    print()
+
+    # By task type × strategy
+    print("── By Task Type x Strategy ──────────────────────────────")
+    for tt, td in by_task_type_out.items():
+        print(f"  {tt:<28s} n={td['total']}  success={td['success_rate_pct']:.0f}%")
+        for st, sd in td["by_strategy"].items():
+            dash = "—" if st not in CONSENSUS_STRATEGIES else f"score {sd['avg_consensus_score']:.2f}"
+            print(f"    {st:<22s}  {sd['count']:3d}x  |  ok {sd['success']:3d}  |  avg {sd['avg_duration_sec']:5.0f}s  |  {dash}")
+    print()
+
+    # Consensus score distribution
+    print("── Consensus Score Distribution ─────────────────────────")
+    max_count = max((b["count"] for b in result["consensus_score_distribution"]["buckets"]), default=1)
+    bar_max   = 14
+    for b in result["consensus_score_distribution"]["buckets"]:
+        fill = int(b["count"] / max_count * bar_max) if max_count > 0 else 0
+        bar  = "█" * fill + "░" * (bar_max - fill)
+        print(f"  {b['range']}  [{bar}]  {b['count']:4d}")
+    print()
+
+    # Reflexion histogram
+    rh = result["reflexion_iterations_histogram"]
+    print("── Reflexion Iterations ─────────────────────────────────")
+    print(f"  0 iters: {rh['0']}  1 iter: {rh['1']}  2 iters: {rh['2']}  3+: {rh['3+']}")
+    print("=" * 60)
+ROLLUP_PYEOF
+  exit $?
+fi
+
+# ── event-log mode (original) ─────────────────────────────────────────────────
 LOG_FILE="$PROJECT_ROOT/.orchestration/tasks.jsonl"
 
 if [ ! -f "$LOG_FILE" ]; then
