@@ -21,13 +21,16 @@ Phase 7 order: **7.2 first → 7.1 second** (eval-harness needed to measure cons
   - **Acceptance:** Dispatch `design_api` task with parallel=[gemini-pro, cc/claude-sonnet-4-6] → both return → consensus-vote selects/merges → output has `consensus_score: 0.85`
   - **Config flag:** `parallel_policy.pick_strategy: consensus` in models.yaml
   - **Note:** Consensus fail → reflexion retry (Bug #3 deferred — resolve together)
-  - **7.1a DONE** (2026-04-24): All scaffold done. 4 layers: bash 3.2 stubs, real-model keys, no subshell leak, source guard. 6 tests PASS on bash 4+. 7.1b (fan-out) + 7.1c (similarity merge) remain.
+  - **7.1a DONE** (2026-04-24): All scaffold done. 4 layers: bash 3.2 stubs, real-model keys, no subshell leak, source guard. 6 tests PASS on bash 4+.
+  - **7.1b DONE** (2026-04-24): consensus fan-out dispatch wired. `pick_strategy=consensus`, `consensus:true` on 3 types, `dispatch_task_consensus()`, 6/6 tests PASS, integration smoke test PASS (2/3 candidates succeeded, consensus.json valid), rollback proof PASS (1-line config flip). 7.1c (similarity merge) + 7.1d (reflexion on fail) remain.
 
 - [x] `7.3` Add quality gates in task-dispatch output phase (P1) ✅ DONE 2026-04-24
   - ✅ DONE: `lib/quality-gate.sh` wired into task-dispatch.sh success path after `run_reviewer`. See Phase 6.2.
   - ✅ 2026-04-24: `bin/test-compressor.sh` added (150 lines) — confirms compress_summary() ratios 0.301/0.500/0.700 match target levels on real 57KB payload. Commit `7ce4e22`.
 
 **Phase 7 Success Criteria:** consensus-vote active for ≥2 task_types. eval-harness runs for `code_review` and `implement_feature`. Quality gates catch ≥1 bad output in integration test.
+
+**Status: PARTIALLY MET** — consensus-vote active for `architecture_analysis`, `design_api`, `security_audit`. eval-harness runs for `code_review` and `implement_feature`. Quality gates in place.
 
 ---
 
@@ -79,6 +82,7 @@ Phase 7 order: **7.2 first → 7.1 second** (eval-harness needed to measure cons
 
 | Date | What | Where |
 |------|------|-------|
+| 2026-04-24 | **Phase 7.1b DONE** — consensus fan-out dispatch: helpers, dispatch_task_consensus (368 lines), test-consensus-dispatch.sh (6 tests PASS), integration smoke PASS, rollback 1-line config flip verified | commits 641a8db, eb2ea71 |
 | 2026-04-24 | **Phase 7.1a DONE** — consensus-vote scaffold: bash 3.2 stubs, AGENT_WEIGHTS remap (raw keys), find_winner subshell fix (process substitution), source guard (BASH_SOURCE guard), 6-test harness PASS | commits 24bb3fd, d72aa95, 12a57fd |
 | 2026-04-24 | **Phase 7.1a DONE** — consensus-vote.sh scaffolded: bash 3.2 no-op stubs, AGENT_WEIGHTS remapped to current model names, consensus_merge() placeholder added, bin/test-consensus.sh written | lib/consensus-vote.sh + bin/test-consensus.sh |
 | 2026-04-24 | **Phase 7.3 DONE** — `bin/test-compressor.sh` (150 lines) confirms compress_summary() ratios 0.301/0.500/0.700 on 57KB structured payload. `smoke-test-context-compressor.sh` removed (redundant). | commit 7ce4e22, fbbaf9a |
