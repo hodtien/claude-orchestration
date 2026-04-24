@@ -11,7 +11,7 @@ if [[ ${BASH_VERSION%%.*} -lt 4 ]]; then
     get_weight()        { echo "1.0"; }
     compute_score()     { echo "1.0"; }
     find_winner()       { echo ""; }
-    consensus_merge()    { echo ""; }
+    consensus_merge()    { echo "0.0"; echo ""; }
     return 0 2>/dev/null || exit 0
 fi
 
@@ -80,10 +80,96 @@ find_winner() {
     echo "$winner"
 }
 
-# Consensus merge — placeholder returning first candidate output (Phase 7.1c will implement real merge)
+# Consensus merge — cluster candidates by Jaccard similarity, pick longest
+# output from the largest cluster.
+#
+# Input: candidates_json = [{"agent_id","output","confidence"}, ...]
+# Output (stdout): two lines:
+#   <consensus_score>  (avg pairwise Jaccard within winning cluster)
+#   <winner_output_text>
+#
+# SIM_THRESHOLD=0.5: pairs with similarity >= 0.5 cluster together.
+# Lower threshold = more forgiving clustering.
 consensus_merge() {
-    local candidates_json="${1:?candidates_json required}"
-    echo "$candidates_json" | jq -r '.[0].output // ""'
+ local candidates_json="${1:?candidates_json required}"
+ python3 - "$candidates_json" <<'PYEOF'
+import sys, json, re
+
+candidates = json.loads(sys.argv[1])
+THRESHOLD = 0.5
+
+if not candidates:
+    print("0.0")
+    print("")
+    sys.exit(0)
+
+def tokenize(text):
+    text = text.lower()
+    text = re.sub(r"[^a-z0-9\s]", " ", text)
+    return {t for t in text.split() if len(t) >= 3}
+
+def jaccard(a, b):
+    if not a and not b:
+        return 1.0
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+tokens = [tokenize(c.get("output", "")) for c in candidates]
+n = len(candidates)
+
+# Pairwise similarity
+sim = [[0.0] * n for _ in range(n)]
+for i in range(n):
+    for j in range(i + 1, n):
+        s = jaccard(tokens[i], tokens[j])
+        sim[i][j] = sim[j][i] = s
+
+# Single-link clustering via union-find
+parent = list(range(n))
+def find(x):
+    while parent[x] != x:
+        parent[x] = parent[parent[x]]
+        x = parent[x]
+    return x
+def union(a, b):
+    ra, rb = find(a), find(b)
+    if ra != rb:
+        parent[ra] = rb
+
+for i in range(n):
+    for j in range(i + 1, n):
+        if sim[i][j] >= THRESHOLD:
+            union(i, j)
+
+# Group by cluster root
+clusters = {}
+for i in range(n):
+    r = find(i)
+    clusters.setdefault(r, []).append(i)
+
+# Winning cluster: largest by size, tiebreak by longest output
+def longest_len(members):
+    return max(len(candidates[m].get("output", "")) for m in members)
+
+winning_members = max(clusters.values(), key=lambda m: (len(m), longest_len(m)))
+
+# Winner: longest output in winning cluster (first on tie)
+winner_idx = max(winning_members, key=lambda m: (len(candidates[m].get("output", "")), -m))
+winner_text = candidates[winner_idx].get("output", "")
+
+# Score: avg pairwise Jaccard within winning cluster
+if len(winning_members) < 2:
+    score = 0.0
+else:
+    pairs = [sim[winning_members[i]][winning_members[j]]
+             for i in range(len(winning_members))
+             for j in range(i + 1, len(winning_members))]
+    score = sum(pairs) / len(pairs) if pairs else 0.0
+
+print(f"{score:.3f}")
+print(winner_text)
+PYEOF
 }
 
 # Main — only run dispatch when executed directly (not sourced)

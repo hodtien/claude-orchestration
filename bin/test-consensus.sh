@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# test-consensus.sh — Phase 7.1a sanity test for lib/consensus-vote.sh
+# test-consensus.sh — Phase 7.1c sanity test for lib/consensus-vote.sh
 #
-# Goal: confirm the scaffolded consensus library functions (get_weight,
-# compute_score, consensus_merge, find_winner) behave as expected after
-# the Phase 7.1a remap and consensus_merge placeholder addition.
+# Goal: confirm consensus_merge (Jaccard clustering), get_weight, compute_score,
+# and find_winner behave as expected after Phase 7.1c implementation.
+#
+# 8 tests: Tests 1-5 (7.1a scaffold), Tests 6-8 (7.1c Jaccard merge)
 #
 # Usage:
 #   bin/test-consensus.sh                # run all tests
@@ -101,13 +102,13 @@ else
   assert_fail "score not > 0" "got '$S1'"
 fi
 
-# ── Test 3: consensus_merge returns first candidate's output text ────────────
+# ── Test 3: consensus_merge returns output text (2-line format: score + text) ─
 echo ""
-echo "Test 3: consensus_merge returns first candidate's output"
-MERGED=$(consensus_merge "$CANDIDATES_JSON")
+echo "Test 3: consensus_merge returns second line as output text"
+MERGED=$(consensus_merge "$CANDIDATES_JSON" | tail -n +2)
 [[ "$VERBOSE" == "true" ]] && echo "    merged = $MERGED"
-if [[ "$MERGED" == "first candidate text" ]]; then
-  assert_pass "merge returned first candidate output"
+if [[ "$MERGED" == "second candidate text" ]]; then
+  assert_pass "merge returned output text (second line of 2-line format)"
 else
   assert_fail "merge returned wrong text" "got '$MERGED'"
 fi
@@ -137,6 +138,58 @@ if [[ "$W_REAL_OK" == "1" ]]; then
   assert_pass "real model name lookup works (got weight $W_REAL)"
 else
   assert_fail "real model name lookup failed" "got '$W_REAL'"
+fi
+
+# ── Test 6: consensus_merge identical candidates → score near 1.0 ────────────
+echo ""
+echo "Test 6: consensus_merge identical candidates → score > 0.0"
+FIXTURE='[
+  {"agent_id":"a","output":"the quick brown fox jumps","confidence":1.0},
+  {"agent_id":"b","output":"the quick brown fox jumps","confidence":1.0},
+  {"agent_id":"c","output":"the quick brown fox jumps","confidence":1.0}
+]'
+RESULT=$(consensus_merge "$FIXTURE")
+SCORE=$(echo "$RESULT" | head -n 1)
+[[ "$VERBOSE" == "true" ]] && echo "    score = $SCORE, output = $(echo "$RESULT" | tail -n +2 | head -c 40)"
+if [[ "$SCORE" != "0.0" ]]; then
+  assert_pass "identical candidates score > 0 ($SCORE)"
+else
+  assert_fail "score was 0.0" "expected non-zero Jaccard for identical text"
+fi
+
+# ── Test 7: consensus_merge disjoint candidates → score 0.0 ─────────────────
+echo ""
+echo "Test 7: consensus_merge disjoint candidates → score 0.0"
+FIXTURE='[
+  {"agent_id":"a","output":"apple banana cherry date elderberry fig grape","confidence":1.0},
+  {"agent_id":"b","output":"xray yankee zulu alpha bravo charlie delta echo","confidence":1.0},
+  {"agent_id":"c","output":"one two three four five six seven eight nine","confidence":1.0}
+]'
+RESULT=$(consensus_merge "$FIXTURE")
+SCORE=$(echo "$RESULT" | head -n 1)
+[[ "$VERBOSE" == "true" ]] && echo "    score = $SCORE"
+if [[ "$SCORE" == "0.000" ]]; then
+  assert_pass "disjoint candidates score 0.000"
+else
+  assert_fail "score was $SCORE" "expected 0.000 for non-overlapping text"
+fi
+
+# ── Test 8: consensus_merge picks longest in winning cluster ─────────────────
+echo ""
+echo "Test 8: consensus_merge picks longest candidate in winning cluster"
+FIXTURE='[
+  {"agent_id":"a","output":"code review detected unused variable","confidence":1.0},
+  {"agent_id":"b","output":"code review detected unused variable in function calculate","confidence":1.0},
+  {"agent_id":"c","output":"totally unrelated topic about weather today outside","confidence":1.0}
+]'
+RESULT=$(consensus_merge "$FIXTURE")
+TEXT=$(echo "$RESULT" | tail -n +2)
+LENGTH=${#TEXT}
+[[ "$VERBOSE" == "true" ]] && echo "    output length = $LENGTH, text = $(echo "$TEXT" | head -c 60)"
+if [[ $LENGTH -gt 50 ]]; then
+  assert_pass "winner is longer candidate ($LENGTH chars)"
+else
+  assert_fail "winner too short: $LENGTH chars" "expected > 50"
 fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────

@@ -986,11 +986,12 @@ dispatch_task_consensus() {
    _rows_json=$(python3 -c "import json,sys; print(json.dumps(sys.argv[1:]))" \
      "${candidate_rows[@]}" 2>/dev/null || echo "[]")
 
-   # Write consensus.json for single-winner case
+   # Write consensus.json for single-winner case — score 0.0 (no pairwise comparison)
    python3 - "$tid" "$task_type" "$successful_count" "$winner_agent" \
-     "$_candidates_json" "$_rows_json" <<'PYEOF' > "$RESULTS_DIR/${tid}.consensus.json"
+     "$_candidates_json" "$_rows_json" "0.0" <<'PYEOF' > "$RESULTS_DIR/${tid}.consensus.json"
 import sys, json, datetime
-_, tid, task_type, successful_count, winner_agent, candidates_json, rows_json = sys.argv
+_, tid, task_type, successful_count, winner_agent, candidates_json, rows_json, consensus_score_str = sys.argv
+consensus_score = float(consensus_score_str)
 candidates = json.loads(candidates_json) if candidates_json else []
 rows = []
 for r in json.loads(rows_json) if rows_json else []:
@@ -1005,7 +1006,7 @@ print(json.dumps({
     "candidates_detail": rows,
     "successful_count": int(successful_count),
     "winner_agent": winner_agent,
-    "consensus_score": 1.0,
+    "consensus_score": consensus_score,
     "strategy_used": "consensus",
     "timestamp": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
 }, indent=2))
@@ -1038,8 +1039,11 @@ print(json.dumps(sys.stdin.read()))
  candidates_json="${candidates_json}]"
 
  # Call consensus_merge (from consensus-vote.sh)
- local merged_output
- merged_output=$(consensus_merge "$candidates_json" 2>/dev/null || echo "")
+ local merge_result
+ merge_result=$(consensus_merge "$candidates_json" 2>/dev/null || printf '0.0\n')
+ local computed_score merged_output
+ computed_score=$(echo "$merge_result" | head -n 1)
+ merged_output=$(echo "$merge_result" | tail -n +2)
 
  if [ -z "$merged_output" ]; then
    # Fallback: first successful candidate
@@ -1059,11 +1063,12 @@ print(json.dumps(sys.stdin.read()))
   _rows_json2=$(python3 -c "import json,sys; print(json.dumps(sys.argv[1:]))" \
     "${candidate_rows[@]}" 2>/dev/null || echo "[]")
 
-  # Write consensus.json
+  # Write consensus.json — use computed_score from consensus_merge
   python3 - "$tid" "$task_type" "$successful_count" "$winner_agent" \
-    "$_candidates_json2" "$_rows_json2" <<'PYEOF' > "$RESULTS_DIR/${tid}.consensus.json"
+    "$_candidates_json2" "$_rows_json2" "$computed_score" <<'PYEOF' > "$RESULTS_DIR/${tid}.consensus.json"
 import sys, json, datetime
-_, tid, task_type, successful_count, winner_agent, candidates_json, rows_json = sys.argv
+_, tid, task_type, successful_count, winner_agent, candidates_json, rows_json, consensus_score_str = sys.argv
+consensus_score = float(consensus_score_str)
 candidates = json.loads(candidates_json) if candidates_json else []
 rows = []
 for r in json.loads(rows_json) if rows_json else []:
@@ -1078,7 +1083,7 @@ print(json.dumps({
     "candidates_detail": rows,
     "successful_count": int(successful_count),
     "winner_agent": winner_agent,
-    "consensus_score": 1.0,
+    "consensus_score": consensus_score,
     "strategy_used": "consensus",
     "timestamp": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
 }, indent=2))
