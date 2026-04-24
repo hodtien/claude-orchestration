@@ -1083,6 +1083,11 @@ print(json.dumps(sys.stdin.read()))
      return $?
    else
      echo "[consensus] $tid → EXHAUSTED after 2 attempts, best effort"
+     # Best-effort: write the longest candidate from the last round so
+     # downstream consumers have output to work with. The `.exhausted`
+     # marker signals "consensus not reached" — consumers should check
+     # the marker to decide whether to trust the output or escalate.
+     printf '%s' "$merged_output" > "$RESULTS_DIR/${tid}.out"
      : > "$RESULTS_DIR/${tid}.exhausted"
      write_consensus_json_exhausted "$tid" "$task_type" "$successful_count" "$computed_score"
      return 0

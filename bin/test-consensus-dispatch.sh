@@ -334,6 +334,34 @@ else
   fi
 fi
 
+# ── Test 10: exhausted path writes non-empty .out (best-effort fallback) ──────
+echo ""
+echo "Test 10: exhausted consensus writes best-effort .out file"
+# Only check when .exhausted marker exists (true disagreement path)
+if [ -f "$RESULTS_DIR/disagree-test-001.exhausted" ]; then
+  if [ -f "$RESULTS_DIR/disagree-test-001.out" ]; then
+    out_size=$(wc -c < "$RESULTS_DIR/disagree-test-001.out" | tr -d ' ')
+    if [ "$out_size" -gt 0 ]; then
+      assert_pass "exhausted: .out non-empty ($out_size bytes, best-effort)"
+    else
+      assert_fail "exhausted: .out exists but empty"
+    fi
+  else
+    assert_fail "exhausted: .out missing" "best-effort fallback should write longest candidate"
+  fi
+else
+  # Path did not reach exhaustion — skip
+  assert_pass "exhausted: skipped (no .exhausted marker, exhaustion path not hit)"
+fi
+
+# Clean up disagree test artifacts
+rm -f "$RESULTS_DIR/disagree-test-001.out" \
+  "$RESULTS_DIR/disagree-test-001.exhausted" \
+  "$RESULTS_DIR/disagree-test-001.failed" \
+  "$RESULTS_DIR/disagree-test-001.consensus.json" \
+  "$RESULTS_DIR/disagree-test-001.needs_revision" 2>/dev/null || true
+rm -rf "$RESULTS_DIR/disagree-test-001.candidates" 2>/dev/null || true
+
 # ── Summary ─────────────────────────────────────────────────────────────────
 echo ""
 echo "------------------------------------------"
