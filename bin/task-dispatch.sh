@@ -800,15 +800,19 @@ Apply the changes now."
 _write_status_consensus() {
     local tid="$1" task_type="$2" strategy="$3" final_state="$4"
     local start_epoch="$5" winner="${6:-}" cand_csv="${7:-}" succ_csv="${8:-}"
-    local score="${9:-0.0}" refl_iter="${10:-0}" markers_csv="${11:-}"
+    local score="${9:-0.0}" refl_iter="${10:-0}"
 
     local _end_epoch _completed_at _started_at _duration
     local _out_bytes _refl_iter _status_json _cand_csv _succ_csv _markers
 
     _end_epoch=$(date -u '+%s')
-    _completed_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ' -d "@$_end_epoch" 2>/dev/null || \
+    # macOS (BSD date): date -u -r <epoch>
+    # Linux (GNU date): date -u -d "@<epoch>"
+    _completed_at=$(date -u -r "$_end_epoch" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || \
+      date -u -d "@$_end_epoch" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || \
       date -u '+%Y-%m-%dT%H:%M:%SZ')
-    _started_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ' -d "@$start_epoch" 2>/dev/null || \
+    _started_at=$(date -u -r "$start_epoch" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || \
+      date -u -d "@$start_epoch" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || \
       date -u '+%Y-%m-%dT%H:%M:%SZ')
     _duration=$(($_end_epoch - start_epoch))
 
@@ -836,6 +840,8 @@ _write_status_consensus() {
 _write_status_first_success() {
     local tid="$1" task_type="$2" strategy="$3" final_state="$4"
     local start_epoch="$5" winner="${6:-}" cand_csv="${7:-}" succ_csv="${8:-}"
+
+    local score="${9:-0.0}" refl_iter="${10:-0}"
 
     local _end_epoch _completed_at _started_at _duration
     local _out_bytes _status_json

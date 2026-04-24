@@ -362,6 +362,68 @@ rm -f "$RESULTS_DIR/disagree-test-001.out" \
   "$RESULTS_DIR/disagree-test-001.needs_revision" 2>/dev/null || true
 rm -rf "$RESULTS_DIR/disagree-test-001.candidates" 2>/dev/null || true
 
+# ── Test 11: first_success path produces .status.json ─────────────────────────
+# Regression guard: `set -u` + unset score/refl_iter in
+# _write_status_first_success would crash dispatcher silently.
+echo ""
+echo "Test 11: first_success dispatch writes .status.json (regression guard)"
+
+setup_batch "test-first-success-status"
+cat > "$BATCH_DIR/task-fs-001.md" <<'TASKEOF'
+---
+id: fs-status-001
+agent: gemini-pro
+task_type: implement_feature
+---
+Implement a foo() function.
+TASKEOF
+
+cat > "$BATCH_DIR/batch.conf" <<'CONFEOF'
+failure_mode: skip-failed
+CONFEOF
+
+export MOCK_OUTPUT_gemini_pro="def foo():\n    pass\n# implementation complete"
+export MIN_OUTPUT_LENGTH=0
+export MOCK_EXIT_gemini_pro=0
+export AGENT_SH_MOCK="$MOCK_AGENT"
+
+# Reset circuit-breaker state so gemini-pro isn't blocked before test
+bin/circuit-breaker.sh reset gemini-pro 2>/dev/null || true
+bin/circuit-breaker.sh reset cc/claude-sonnet-4-6 2>/dev/null || true
+bin/circuit-breaker.sh reset minimax-code 2>/dev/null || true
+
+rm -f "$RESULTS_DIR/fs-status-001.status.json" \
+ "$RESULTS_DIR/fs-status-001.out" \
+ "$RESULTS_DIR/fs-status-001.log" \
+ "$RESULTS_DIR/fs-status-001.report.json" 2>/dev/null || true
+
+bash "$BIN_DISPATCH" "$BATCH_DIR" --sequential 2>&1 > /tmp/dispatch-fs.$$.log || true
+rm -f /tmp/dispatch-fs.$$.log
+
+if [ -f "$RESULTS_DIR/fs-status-001.status.json" ]; then
+ strategy=$(python3 -c "
+import json
+d=json.load(open('$RESULTS_DIR/fs-status-001.status.json'))
+assert d['schema_version']==1
+print(d['strategy_used'])
+" 2>/dev/null || echo "?")
+ if [[ -n "$strategy" && "$strategy" != "?" ]]; then
+ assert_pass "first_success helper ran without crash (strategy=$strategy)"
+ else
+ assert_fail "first_success: .status.json malformed (strategy='$strategy')"
+ fi
+else
+ assert_fail "first_success: .status.json missing" \
+ "dispatcher may have crashed on set -u unbound var"
+fi
+
+# Cleanup
+rm -f "$RESULTS_DIR/fs-status-001.status.json" \
+ "$RESULTS_DIR/fs-status-001.out" \
+ "$RESULTS_DIR/fs-status-001.log" \
+ "$RESULTS_DIR/fs-status-001.report.json" 2>/dev/null || true
+unset MOCK_EXIT_gemini_pro MOCK_OUTPUT_gemini_pro
+
 # ── Summary ─────────────────────────────────────────────────────────────────
 echo ""
 echo "------------------------------------------"
