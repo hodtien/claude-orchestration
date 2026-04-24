@@ -21,7 +21,7 @@ Phase 7 order: **7.2 first → 7.1 second** (eval-harness needed to measure cons
   - **Acceptance:** Dispatch `design_api` task with parallel=[gemini-pro, cc/claude-sonnet-4-6] → both return → consensus-vote selects/merges → output has `consensus_score: 0.85`
   - **Config flag:** `parallel_policy.pick_strategy: consensus` in models.yaml
   - **Note:** Consensus fail → reflexion retry (Bug #3 deferred — resolve together)
-  - **7.1a DONE** (2026-04-24): bash 3.2 no-op stubs added, AGENT_WEIGHTS remapped to current model names (cc_claude_sonnet_4_6=2.0, etc.), consensus_merge() placeholder added, bin/test-consensus.sh written. 7.1b (fan-out) + 7.1c (similarity merge) remain.
+  - **7.1a DONE** (2026-04-24): All scaffold done. 4 layers: bash 3.2 stubs, real-model keys, no subshell leak, source guard. 6 tests PASS on bash 4+. 7.1b (fan-out) + 7.1c (similarity merge) remain.
 
 - [x] `7.3` Add quality gates in task-dispatch output phase (P1) ✅ DONE 2026-04-24
   - ✅ DONE: `lib/quality-gate.sh` wired into task-dispatch.sh success path after `run_reviewer`. See Phase 6.2.
@@ -79,6 +79,7 @@ Phase 7 order: **7.2 first → 7.1 second** (eval-harness needed to measure cons
 
 | Date | What | Where |
 |------|------|-------|
+| 2026-04-24 | **Phase 7.1a DONE** — consensus-vote scaffold: bash 3.2 stubs, AGENT_WEIGHTS remap (raw keys), find_winner subshell fix (process substitution), source guard (BASH_SOURCE guard), 6-test harness PASS | commits 24bb3fd, d72aa95, 12a57fd |
 | 2026-04-24 | **Phase 7.1a DONE** — consensus-vote.sh scaffolded: bash 3.2 no-op stubs, AGENT_WEIGHTS remapped to current model names, consensus_merge() placeholder added, bin/test-consensus.sh written | lib/consensus-vote.sh + bin/test-consensus.sh |
 | 2026-04-24 | **Phase 7.3 DONE** — `bin/test-compressor.sh` (150 lines) confirms compress_summary() ratios 0.301/0.500/0.700 on 57KB structured payload. `smoke-test-context-compressor.sh` removed (redundant). | commit 7ce4e22, fbbaf9a |
 | 2026-04-23 | **Phase 7.2 DONE** — eval-harness.sh (439 lines) + 2 golden cases + context-compressor set -e fix | commit 0a60645 |
