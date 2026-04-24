@@ -37,9 +37,15 @@ Phase 7 order: **7.2 first → 7.1 second** (eval-harness needed to measure cons
 ## Roadmap (next up)
 
 **Phase 8: Tool Registry & Observability (P1)**
-- [ ] `8.1` Central `config/tool-registry.yaml` (P1)
-- [ ] `8.2` Execution trace viewer via orch-notify MCP (P1)
-- [ ] `8.3` Token budget dashboard in orch-dashboard.sh (P1)
+- [x] `8.1` Unified task status JSON — canonical terminal state (P1) ✅ DONE 2026-04-24
+  - `lib/task-status.sh` (~50 lines), `bin/test-task-status.sh` (5 tests)
+  - schema v1: 15 fields, strategy/final_state/candidates/markers/duration
+  - 7 terminal points wired (4 consensus + 3 first_success)
+  - macOS BSD date fix applied, dead markers_csv param removed
+  - 5/5 tests PASS, no regression
+- [ ] `8.2` Central `config/tool-registry.yaml` (P1)
+- [ ] `8.3` Execution trace viewer via orch-notify MCP (P1)
+- [ ] `8.4` Token budget dashboard in orch-dashboard.sh (P1)
 
 **Phase 9: Advanced Patterns (P2, trigger-based)**
 - [ ] `9.1` Multi-turn orchestration sessions (P2)
@@ -51,7 +57,7 @@ Phase 7 order: **7.2 first → 7.1 second** (eval-harness needed to measure cons
 
 ## Icebox
 
-- [ ] Phase 8 tasks (tool-registry, trace viewer, budget dashboard)
+- [ ] Phase 8 remaining tasks (tool-registry, trace viewer, budget dashboard)
 - [ ] Phase 9 tasks (multi-turn, agent protocol, cross-project, ReAct)
 - [ ] Move 9 deprecated libs → `lib/deprecated/` (cleanup cosmetic)
 - [ ] `D.2` `setup-router.sh apply` to `~/.claude/settings.json`
@@ -82,6 +88,7 @@ Phase 7 order: **7.2 first → 7.1 second** (eval-harness needed to measure cons
 
 | Date | What | Where |
 |------|------|-------|
+| 2026-04-24 | **Phase 8.1 DONE** — unified task status JSON: lib/task-status.sh, 7 terminal points wired, schema v1, 5 tests PASS, macOS BSD date fix | commit 7f59a73, 1ac531b |
 | 2026-04-24 | **Phase 7.1 COMPLETE** — consensus-vote wired: 7.1a scaffold, 7.1b fan-out dispatch, 7.1c Jaccard similarity merge, 7.1d reflexion loop. 11+9 tests PASS, integration smoke PASS | commits d2a3214, 0c30527, 641a8db, eb2ea71, 12a57fd, d72aa95 |
 | 2026-04-24 | **Phase 7.1b DONE** — consensus fan-out dispatch: helpers, dispatch_task_consensus (368 lines), test-consensus-dispatch.sh (6 tests PASS), integration smoke PASS, rollback 1-line config flip verified | commits 641a8db, eb2ea71 |
 | 2026-04-24 | **Phase 7.1a DONE** — consensus-vote scaffold: bash 3.2 stubs, AGENT_WEIGHTS remap (raw keys), find_winner subshell fix (process substitution), source guard (BASH_SOURCE guard), 6-test harness PASS | commits 24bb3fd, d72aa95, 12a57fd |
@@ -119,6 +126,12 @@ Phase 7 order: **7.2 first → 7.1 second** (eval-harness needed to measure cons
 - Ratio=0 in smoke test because 60k of repeated `X` chars compresses to ~45 bytes of summary
 - Real payload (code, docs) → ratio ~0.3-0.7 as expected
 - **Also fixed:** `set -euo pipefail` removed (same Bug #1 pattern as quality-gate.sh)
+
+### Consensus sim_threshold tuning observation
+- Real LLM outputs score below Jaccard 0.2 for identical tasks — current global threshold (0.3) may be too high for some task types
+- Consider per-task_type sim_threshold tuning: `architecture_analysis: 0.15`, `security_audit: 0.3`, `design_api: 0.2`
+- LLM outputs are structurally diverse even when semantically equivalent — Jaccard on raw text penalizes formatting differences
+- **Action:** Track consensus_score distribution per task_type in production, then calibrate thresholds from real data
 
 ### Consensus voting design
 - Current dispatch_parallel() uses `agent.sh` once per spec — each parallel model is a single agent call, not multiple
