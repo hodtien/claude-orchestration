@@ -164,21 +164,24 @@ task_mapping:
     fallback:
     - cc/claude-sonnet-4-6
   architecture_analysis:
+    consensus: true
     parallel:
     - gemini-pro
+    - cc/claude-sonnet-4-6
     - minimax-code
     fallback:
     - cc/claude-opus-4-6
-    - cc/claude-sonnet-4-6
-    rationale: gemini-pro for deep architecture reasoning; Claude Opus as premium
-      backup; minimax-code last resort.
+    rationale: gemini-pro for deep architecture reasoning; Claude Sonnet as parallel
+      option; minimax-code last resort.
   security_audit:
+    consensus: true
     parallel:
     - gemini-pro
+    - cc/claude-sonnet-4-6
     - minimax-code
     fallback:
     - cc/claude-opus-4-6
-    - cc/claude-sonnet-4-6
+    rationale: gemini-pro for deep security analysis; Claude Sonnet as parallel option; minimax-code last resort.
   analyze_requirements:
     parallel:
     - gemini-pro
@@ -195,6 +198,7 @@ task_mapping:
     fallback:
     - cc/claude-sonnet-4-6
   design_api:
+    consensus: true
     parallel:
     - gemini-pro
     - cc/claude-sonnet-4-6
@@ -242,7 +246,7 @@ task_mapping:
     - cc/claude-haiku-4-5
     - cc/claude-sonnet-4-5
 parallel_policy:
-  pick_strategy: first_success
+  pick_strategy: consensus
   max_parallel: 3
   cancel_slower_on_first_success: true
   timeout_per_model_sec: 120

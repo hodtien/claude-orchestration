@@ -38,6 +38,8 @@ else
 fi
 # shellcheck source=../lib/context-compressor.sh
 [ -f "$SCRIPT_DIR/../lib/context-compressor.sh" ] && . "$SCRIPT_DIR/../lib/context-compressor.sh" || compress_session() { return 0; }
+# shellcheck source=../lib/consensus-vote.sh
+[ -f "$SCRIPT_DIR/../lib/consensus-vote.sh" ] && . "$SCRIPT_DIR/../lib/consensus-vote.sh" || true
 BATCH_DIR="${1:?Usage: task-dispatch.sh <batch-dir> [--parallel|--status]}"
 MODE="${2:---sequential}"
 # Always retry skipped/failed tasks — no flag needed
@@ -246,6 +248,35 @@ for line in m.group(1).splitlines():
         print(' '.join(cleaned), end='')
         sys.exit(0)
 " "$file" "$key"
+}
+
+# ── consensus helpers (Phase 7.1b) ───────────────────────────────────────────
+MODELS_YAML="${PROJECT_ROOT}/config/models.yaml"
+
+is_consensus_type() {
+ local task_type="$1"
+ local enabled
+ enabled=$(yq -r ".task_mapping.${task_type}.consensus // false" \
+   "$MODELS_YAML" 2>/dev/null)
+ [[ "$enabled" == "true" ]]
+}
+
+get_pick_strategy() {
+ yq -r ".parallel_policy.pick_strategy // \"first_success\"" \
+   "$MODELS_YAML" 2>/dev/null
+}
+
+get_parallel_candidates() {
+ local task_type="$1" max_parallel
+ max_parallel=$(yq -r ".parallel_policy.max_parallel // 3" "$MODELS_YAML")
+ yq -r ".task_mapping.${task_type}.parallel[]" "$MODELS_YAML" 2>/dev/null \
+   | head -n "$max_parallel"
+}
+
+escape_agent_filename() {
+ local agent="$1"
+ # Replace / only — dashes and dots are valid filename chars, keep them
+ echo "${agent//\//_}"
 }
 
 load_batch_conf() {
@@ -746,8 +777,343 @@ Apply the changes now."
   fi
 }
 
-# ── dispatch one task ─────────────────────────────────────────────────────────
+# ── consensus fan-out dispatch (Phase 7.1b) ───────────────────────────────────
+dispatch_task_consensus() {
+ local spec="$1"
+ local task_type="$2"
+
+ local tid candidates_dir candidate_agent pid_map
+ local -A pid_to_agent
+ local -A agent_exit
+ local -A agent_output
+ local -A agent_duration
+
+ local start_ts end_ts elapsed pid exit_code out_size safe_name
+ local successful_count=0 winner_output winner_agent=""
+
+ tid=$(parse_front "$spec" "id" "unknown")
+ candidates_dir="$RESULTS_DIR/${tid}.candidates"
+ mkdir -p "$candidates_dir"
+
+ # Build list of parallel candidates (capped at max_parallel)
+ local -a candidates_list=()
+ while IFS= read -r candidate_agent; do
+   [ -n "$candidate_agent" ] && candidates_list+=("$candidate_agent")
+ done < <(get_parallel_candidates "$task_type")
+
+ if [ ${#candidates_list[@]} -eq 0 ]; then
+   echo "[consensus] WARN: no parallel candidates for $task_type — falling back to first_success" >&2
+   return 1
+ fi
+
+ echo "[consensus] $tid → fan-out to ${#candidates_list[@]} candidates: ${candidates_list[*]}"
+
+ # Launch all candidates in background
+ local -a pids=()
+ for candidate_agent in "${candidates_list[@]}"; do
+   safe_name=$(escape_agent_filename "$candidate_agent")
+   local out_file="$candidates_dir/${safe_name}.out"
+   local err_file="$candidates_dir/${safe_name}.err"
+
+   # Read timeout from config
+   local timeout_per_model
+   timeout_per_model=$(yq -r ".parallel_policy.timeout_per_model_sec // 120" "$MODELS_YAML" 2>/dev/null)
+
+   # Source the prompt
+   local prompt
+   prompt=$(parse_body "$spec")
+
+   # agent_cmd supports AGENT_SH_MOCK override for testing
+   local agent_cmd="${AGENT_SH_MOCK:-$SCRIPT_DIR/agent.sh}"
+
+   echo "[consensus] launch $candidate_agent for $tid (timeout=${timeout_per_model}s)"
+
+   "$agent_cmd" "$candidate_agent" "$tid" "$prompt" "$timeout_per_model" "1" \
+     > "$out_file" 2>> "$err_file" &
+   local job_pid=$!
+   pids+=("$job_pid")
+   pid_to_agent["$job_pid"]="$candidate_agent"
+   echo "$job_pid" > "$PIDS_DIR/${tid}-${candidate_agent//\//_}.pid"
+ done
+
+ # Wait for all with per-candidate timeout
+ start_ts=$(date +%s)
+ local remaining=${#pids[@]}
+ while [ "$remaining" -gt 0 ]; do
+   local wait_pid ret
+   wait_pid=$(wait -n 2>/dev/null)
+   ret=$?
+   if [ "$ret" -eq 0 ] || [ "$ret" -eq 1 ]; then
+     :
+   elif [ "$ret" -eq 127 ]; then
+     # wait -n not available, fall back to simple wait loop
+     for wp in "${pids[@]}"; do
+       if kill -0 "$wp" 2>/dev/null; then
+         sleep 0.5
+         continue
+       fi
+     done
+     break
+   fi
+
+   # Collect completed jobs
+   end_ts=$(date +%s)
+   elapsed=$((end_ts - start_ts))
+   local timeout_total
+   timeout_total=$(yq -r ".parallel_policy.timeout_per_model_sec // 120" "$MODELS_YAML" 2>/dev/null)
+   if [ "$elapsed" -ge "$timeout_total" ]; then
+     # Kill remaining jobs
+     for wp in "${pids[@]}"; do
+       kill -0 "$wp" 2>/dev/null && kill "$wp" 2>/dev/null || true
+     done
+     break
+   fi
+
+   for i in "${!pids[@]}"; do
+     local wp="${pids[$i]}"
+     if ! kill -0 "$wp" 2>/dev/null; then
+       unset 'pids[i]'
+     fi
+   done
+   remaining=${#pids[@]}
+ done
+
+ # Wait for remaining jobs with timeout
+ local timeout_total
+ timeout_total=$(yq -r ".parallel_policy.timeout_per_model_sec // 120" "$MODELS_YAML" 2>/dev/null)
+ for pid in "${pids[@]}"; do
+   [ -z "$pid" ] && continue
+   if kill -0 "$pid" 2>/dev/null; then
+     local waited=0
+     while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt "$timeout_total" ]; do
+       sleep 1
+       waited=$((waited + 1))
+     done
+     if kill -0 "$pid" 2>/dev/null; then
+       kill -TERM "$pid" 2>/dev/null || true
+       sleep 1
+       kill -KILL "$pid" 2>/dev/null || true
+     fi
+   fi
+   wait "$pid" 2>/dev/null || true
+ done
+
+ # Collect results — gather stats for all candidates
+ local -a candidate_rows=()
+ for candidate_agent in "${candidates_list[@]}"; do
+   safe_name=$(escape_agent_filename "$candidate_agent")
+   local out_file="$candidates_dir/${safe_name}.out"
+   local err_file="$candidates_dir/${safe_name}.err"
+   local log_file="$RESULTS_DIR/${tid}.log"
+
+   # Determine exit code — use err file presence as proxy for failure
+   exit_code=0
+   if [ -f "$err_file" ] && [ -s "$err_file" ]; then
+     local err_content
+     err_content=$(cat "$err_file" 2>/dev/null)
+     if echo "$err_content" | grep -q "timeout\|TIMEOUT\|killed\|Killed\|signal\|Signal"; then
+       exit_code=124
+     elif echo "$err_content" | grep -q "error\|Error\|ERROR"; then
+       exit_code=1
+     fi
+   fi
+
+   # Actual exit code from log
+   if [ -f "$log_file" ]; then
+     local logged_exit
+     logged_exit=$(grep -m1 "exit_code.*$candidate_agent" "$log_file" 2>/dev/null | \
+                   sed 's/.*exit_code.*: *\([0-9]*\).*/\1/' || echo "")
+     [ -n "$logged_exit" ] && [ "$logged_exit" -ge 0 ] 2>/dev/null && exit_code="$logged_exit"
+   fi
+
+   out_size=0
+   if [ -f "$out_file" ] && [ -s "$out_file" ]; then
+     out_size=$(wc -c < "$out_file" | tr -d ' ')
+   fi
+
+   # Duration estimation
+   local duration_s=0
+   if [ -f "$err_file" ]; then
+     local first_line
+     first_line=$(head -1 "$err_file" 2>/dev/null || echo "")
+     if echo "$first_line" | grep -qE '[0-9]+(\.[0-9]+)?s$'; then
+       duration_s=$(echo "$first_line" | sed 's/[^0-9.]//g' || echo "0")
+     fi
+   fi
+
+   # Record per-candidate data
+   agent_output["$candidate_agent"]="$(cat "$out_file" 2>/dev/null || echo "")"
+   agent_exit["$candidate_agent"]="$exit_code"
+   agent_duration["$candidate_agent"]="${duration_s:-0}"
+
+   # Build candidate row for consensus.json
+   local chars_val="$out_size"
+   local exit_val="$exit_code"
+   local dur_val="${duration_s:-0}"
+   candidate_rows+=("{\"agent\":\"$candidate_agent\",\"chars\":$chars_val,\"exit_code\":$exit_val,\"duration_s\":$dur_val}")
+
+   echo "[consensus] $candidate_agent → exit=$exit_code chars=$out_size"
+
+   rm -f "$PIDS_DIR/${tid}-${candidate_agent//\//_}.pid"
+ done
+
+ # Count successful candidates (exit 0 AND non-empty output)
+ local -a successful_candidates=()
+ for candidate_agent in "${candidates_list[@]}"; do
+   local ec="${agent_exit[$candidate_agent]}"
+   local out="${agent_output[$candidate_agent]}"
+   if [ "$ec" -eq 0 ] && [ -n "$out" ] && [ $(echo -n "$out" | wc -c) -gt 0 ]; then
+     successful_candidates+=("$candidate_agent")
+     successful_count=$((successful_count + 1))
+   fi
+ done
+
+ echo "[consensus] $tid → $successful_count/${#candidates_list[@]} successful"
+
+ # Failure mode: no candidates succeeded
+ if [ "$successful_count" -eq 0 ]; then
+   echo "[consensus] FAIL: $tid — all $successful_count candidates failed"
+   return 1
+ fi
+
+ # Single candidate success: verbatim copy (no merge needed)
+ if [ "$successful_count" -eq 1 ]; then
+   winner_agent="${successful_candidates[0]}"
+   winner_output="${agent_output[$winner_agent]}"
+   echo "[consensus] $tid → single winner: $winner_agent (${#winner_output} chars)"
+
+   printf '%s' "$winner_output" > "$RESULTS_DIR/${tid}.out"
+
+   # Encode arrays as JSON strings for safe Python arg passing
+   local _candidates_json _rows_json
+   _candidates_json=$(python3 -c "import json,sys; print(json.dumps(sys.argv[1:]))" \
+     "${candidates_list[@]}" 2>/dev/null || echo "[]")
+   _rows_json=$(python3 -c "import json,sys; print(json.dumps(sys.argv[1:]))" \
+     "${candidate_rows[@]}" 2>/dev/null || echo "[]")
+
+   # Write consensus.json for single-winner case
+   python3 - "$tid" "$task_type" "$successful_count" "$winner_agent" \
+     "$_candidates_json" "$_rows_json" <<'PYEOF' > "$RESULTS_DIR/${tid}.consensus.json"
+import sys, json, datetime
+_, tid, task_type, successful_count, winner_agent, candidates_json, rows_json = sys.argv
+candidates = json.loads(candidates_json) if candidates_json else []
+rows = []
+for r in json.loads(rows_json) if rows_json else []:
+    try:
+        rows.append(json.loads(r))
+    except Exception:
+        rows.append(r)
+print(json.dumps({
+    "task_id": tid,
+    "task_type": task_type,
+    "candidates": candidates,
+    "candidates_detail": rows,
+    "successful_count": int(successful_count),
+    "winner_agent": winner_agent,
+    "consensus_score": 1.0,
+    "strategy_used": "consensus",
+    "timestamp": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+}, indent=2))
+PYEOF
+
+   return 0
+ fi
+
+ # Multiple candidates: invoke consensus_merge
+ echo "[consensus] $tid → $successful_count candidates → consensus_merge"
+
+ # Build candidates JSON for consensus_merge
+ local candidates_json="["
+ local first=true
+ for cand in "${successful_candidates[@]}"; do
+   local out escaped_out
+   out="${agent_output[$cand]}"
+   # Escape double-quotes and newlines for JSON
+   escaped_out=$(printf '%s' "$out" | python3 -c "
+import sys, json
+print(json.dumps(sys.stdin.read()))
+" 2>/dev/null || echo '\"\"')
+   if [ "$first" = "true" ]; then
+     candidates_json="${candidates_json}{\"agent_id\":\"$cand\",\"output\":${escaped_out},\"confidence\":1.0}"
+     first=false
+   else
+     candidates_json="${candidates_json},{\"agent_id\":\"$cand\",\"output\":${escaped_out},\"confidence\":1.0}"
+   fi
+ done
+ candidates_json="${candidates_json}]"
+
+ # Call consensus_merge (from consensus-vote.sh)
+ local merged_output
+ merged_output=$(consensus_merge "$candidates_json" 2>/dev/null || echo "")
+
+ if [ -z "$merged_output" ]; then
+   # Fallback: first successful candidate
+   echo "[consensus] WARN: consensus_merge returned empty — using first successful" >&2
+   winner_agent="${successful_candidates[0]}"
+   merged_output="${agent_output[$winner_agent]}"
+ else
+   winner_agent="merged"
+ fi
+
+ printf '%s' "$merged_output" > "$RESULTS_DIR/${tid}.out"
+
+  # Encode arrays as JSON strings for safe Python arg passing
+  local _candidates_json2 _rows_json2
+  _candidates_json2=$(python3 -c "import json,sys; print(json.dumps(sys.argv[1:]))" \
+    "${candidates_list[@]}" 2>/dev/null || echo "[]")
+  _rows_json2=$(python3 -c "import json,sys; print(json.dumps(sys.argv[1:]))" \
+    "${candidate_rows[@]}" 2>/dev/null || echo "[]")
+
+  # Write consensus.json
+  python3 - "$tid" "$task_type" "$successful_count" "$winner_agent" \
+    "$_candidates_json2" "$_rows_json2" <<'PYEOF' > "$RESULTS_DIR/${tid}.consensus.json"
+import sys, json, datetime
+_, tid, task_type, successful_count, winner_agent, candidates_json, rows_json = sys.argv
+candidates = json.loads(candidates_json) if candidates_json else []
+rows = []
+for r in json.loads(rows_json) if rows_json else []:
+    try:
+        rows.append(json.loads(r))
+    except Exception:
+        rows.append(r)
+print(json.dumps({
+    "task_id": tid,
+    "task_type": task_type,
+    "candidates": candidates,
+    "candidates_detail": rows,
+    "successful_count": int(successful_count),
+    "winner_agent": winner_agent,
+    "consensus_score": 1.0,
+    "strategy_used": "consensus",
+    "timestamp": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+}, indent=2))
+PYEOF
+
+ local result_size
+ result_size=$(wc -c < "$RESULTS_DIR/${tid}.out" | tr -d ' ')
+ echo "[consensus] $tid → DONE (merged output: ${result_size} bytes, winner=$winner_agent)"
+
+ return 0
+}
+
+# ── dispatch one task (router — Phase 7.1b) ────────────────────────────────────
 dispatch_task() {
+ local spec="$1"
+ local agent_override="${2:-}"
+ local task_type pick_strategy
+
+ task_type=$(parse_front "$spec" "task_type" "")
+ pick_strategy=$(get_pick_strategy)
+
+ if [[ "$pick_strategy" == "consensus" ]] && [[ -n "$task_type" ]] && is_consensus_type "$task_type"; then
+   dispatch_task_consensus "$spec" "$task_type"
+ else
+   dispatch_task_first_success "$spec" "$agent_override"
+ fi
+}
+
+# ── dispatch one task (first_success path — renamed from original dispatch_task)
+dispatch_task_first_success() {
   local spec="$1"
   local agent_override="${2:-}"
   local tid agent timeout retries prompt task_type prefer_cheap original_agent
