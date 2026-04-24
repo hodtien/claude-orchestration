@@ -22,7 +22,7 @@ Phase 7 order: **7.2 first → 7.1 second** (eval-harness needed to measure cons
   - **Config flag:** `parallel_policy.pick_strategy: consensus` in models.yaml
   - **Note:** Consensus fail → reflexion retry (Bug #3 deferred — resolve together)
   - **7.1a DONE** (2026-04-24): All scaffold done. 4 layers: bash 3.2 stubs, real-model keys, no subshell leak, source guard. 6 tests PASS on bash 4+.
-  - **7.1b DONE** (2026-04-24): consensus fan-out dispatch wired. `pick_strategy=consensus`, `consensus:true` on 3 types, `dispatch_task_consensus()`, 6/6 tests PASS, integration smoke test PASS (2/3 candidates succeeded, consensus.json valid), rollback proof PASS (1-line config flip). 7.1c (similarity merge) + 7.1d (reflexion on fail) remain.
+  - **7.1d DONE** (2026-04-24): reflexion loop on consensus failure. Externalized sim_threshold to models.yaml (0.3). On consensus fail (no survivors OR score=0 with 2+ candidates): trigger reflexion + re-dispatch with peer-output enriched prompt. Max 2 iterations. Exhausted marker + consensus_exhausted strategy. 11 unit tests PASS, 9 dispatch tests PASS. All Phase 7.1 subtasks CLOSED.
 
 - [x] `7.3` Add quality gates in task-dispatch output phase (P1) ✅ DONE 2026-04-24
   - ✅ DONE: `lib/quality-gate.sh` wired into task-dispatch.sh success path after `run_reviewer`. See Phase 6.2.
@@ -30,7 +30,7 @@ Phase 7 order: **7.2 first → 7.1 second** (eval-harness needed to measure cons
 
 **Phase 7 Success Criteria:** consensus-vote active for ≥2 task_types. eval-harness runs for `code_review` and `implement_feature`. Quality gates catch ≥1 bad output in integration test.
 
-**Status: PARTIALLY MET** — consensus-vote active for `architecture_analysis`, `design_api`, `security_audit`. eval-harness runs for `code_review` and `implement_feature`. Quality gates in place.
+**Status: MET** — consensus-vote ACTIVE for `architecture_analysis`, `design_api`, `security_audit`. eval-harness running for `code_review` and `implement_feature`. Quality gates in place. All Phase 7.1 subtasks CLOSED.
 
 ---
 
@@ -82,6 +82,7 @@ Phase 7 order: **7.2 first → 7.1 second** (eval-harness needed to measure cons
 
 | Date | What | Where |
 |------|------|-------|
+| 2026-04-24 | **Phase 7.1 COMPLETE** — consensus-vote wired: 7.1a scaffold, 7.1b fan-out dispatch, 7.1c Jaccard similarity merge, 7.1d reflexion loop. 11+9 tests PASS, integration smoke PASS | commits d2a3214, 0c30527, 641a8db, eb2ea71, 12a57fd, d72aa95 |
 | 2026-04-24 | **Phase 7.1b DONE** — consensus fan-out dispatch: helpers, dispatch_task_consensus (368 lines), test-consensus-dispatch.sh (6 tests PASS), integration smoke PASS, rollback 1-line config flip verified | commits 641a8db, eb2ea71 |
 | 2026-04-24 | **Phase 7.1a DONE** — consensus-vote scaffold: bash 3.2 stubs, AGENT_WEIGHTS remap (raw keys), find_winner subshell fix (process substitution), source guard (BASH_SOURCE guard), 6-test harness PASS | commits 24bb3fd, d72aa95, 12a57fd |
 | 2026-04-24 | **Phase 7.1a DONE** — consensus-vote.sh scaffolded: bash 3.2 no-op stubs, AGENT_WEIGHTS remapped to current model names, consensus_merge() placeholder added, bin/test-consensus.sh written | lib/consensus-vote.sh + bin/test-consensus.sh |
