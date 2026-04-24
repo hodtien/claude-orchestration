@@ -38,6 +38,12 @@ if [[ ${BASH_VERSION%%.*} -lt 4 ]]; then
   exit 0
 fi
 
+# yq required for consensus helper functions
+if ! command -v yq >/dev/null 2>&1; then
+  echo "SKIP — yq not installed. Install: brew install yq"
+  exit 0
+fi
+
 VERBOSE="false"
 if [[ "${1:-}" == "--verbose" || "${1:-}" == "-v" ]]; then
   VERBOSE="true"

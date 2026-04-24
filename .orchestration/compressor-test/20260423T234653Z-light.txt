@@ -1,0 +1,478 @@
+#!/usr/bin/env bash
+# task-dispatch.sh — Async task dispatcher
+# Reads task spec files, dispatches to agents, writes results + inbox notification.
+# Runs WITHOUT Claude — user triggers directly from terminal.
+#
+# Usage:
+#   task-dispatch.sh <batch-dir>             # dispatch all tasks (always retries skipped/failed)
+#   task-dispatch.sh <batch-dir> --parallel  # parallel dispatch (always retries skipped/failed)
+#   task-dispatch.sh <batch-dir> --status    # show batch status only
+#
+# Batch dir: <project>/.orchestration/tasks/<batch-id>/
+# Results:   <project>/.orchestration/results/<task-id>.out
+# Inbox:     <project>/.orchestration/inbox/<batch-id>.done.md
+#
+# Task spec format: YAML frontmatter (--- delimited) + Markdown body as prompt.
+# Required frontmatter: id, agent. Optional: retries, context_from, depends_on.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+HEALTH_BEACON_SH="$SCRIPT_DIR/orch-health-beacon.sh"
+# shellcheck source=./notify-lib.sh
+[ -f "$SCRIPT_DIR/notify-lib.sh" ] && . "$SCRIPT_DIR/notify-lib.sh" || notify_event() { return 0; }
+# shellcheck source=./lib/triage-tiers.sh
+[ -f "$SCRIPT_DIR/../lib/triage-tiers.sh" ] && . "$SCRIPT_DIR/../lib/triage-tiers.sh" || true
+# shellcheck source=../lib/intent-verifier.sh
+[ -f "$SCRIPT_DIR/../lib/intent-verifier.sh" ] && . "$SCRIPT_DIR/../lib/intent-verifier.sh" || verify_spec() { echo "{}"; return 0; }
+# shellcheck source=../lib/cost-tracker.sh
+[ -f "$SCRIPT_DIR/../lib/cost-tracker.sh" ] && . "$SCRIPT_DIR/../lib/cost-tracker.sh" || cost_record() { return 0; }
+# shellcheck source=../lib/agent-failover.sh
+[ -f "$SCRIPT_DIR/../lib/agent-failover.sh" ] && . "$SCRIPT_DIR/../lib/agent-failover.sh" || failover_find_available() { return 1; }
+# shellcheck source=../lib/quality-gate.sh
+if [ -f "$SCRIPT_DIR/../lib/quality-gate.sh" ]; then
+  . "$SCRIPT_DIR/../lib/quality-gate.sh"
+else
+  check_quality_gate() { echo "pass"; }
+  trigger_reflexion() { return 0; }
+fi
+# shellcheck source=../lib/context-compressor.sh
+[ -f "$SCRIPT_DIR/../lib/context-compressor.sh" ] && . "$SCRIPT_DIR/../lib/context-compressor.sh" || compress_session() { return 0; }
+BATCH_DIR="${1:?Usage: task-dispatch.sh <batch-dir> [--parallel|--status]}"
+MODE="${2:---sequential}"
+# Always retry skipped/failed tasks — no flag needed
+FORCE_RETRY=true
+# Strip legacy --retry-skipped flag if passed (backwards compat)
+[[ "$MODE" == "--retry-skipped" ]] && MODE="--sequential"
+[[ "${3:-}" == "--retry-skipped" ]] && true
+
+# Resolve absolute path
+if [[ ! "$BATCH_DIR" = /* ]]; then
+  BATCH_DIR="$(pwd)/$BATCH_DIR"
+fi
+
+if [ ! -d "$BATCH_DIR" ]; then
+  echo "[dispatch] batch dir not found: $BATCH_DIR" >&2
+  exit 1
+fi
+
+PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+ORCH_DIR="$PROJECT_ROOT/.orchestration"
+RESULTS_DIR="$ORCH_DIR/results"
+INBOX_DIR="$ORCH_DIR/inbox"
+DLQ_DIR="$ORCH_DIR/dlq"
+PIDS_DIR="$ORCH_DIR/pids"
+LOG_FILE="$ORCH_DIR/tasks.jsonl"
+mkdir -p "$RESULTS_DIR" "$INBOX_DIR" "$PIDS_DIR"
+
+BATCH_ID="$(basename "$BATCH_DIR")"
+BATCH_CONF="$BATCH_DIR/batch.conf"
+
+SHUTDOWN_IN_PROGRESS=false
+
+log_shutdown_requested() {
+  local signal="$1"
+  python3 - "$signal" "$BATCH_ID" <<'PYEOF'
+import datetime, json, sys
+_, signal, batch_id = sys.argv
+print(json.dumps({
+    "ts": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "event": "shutdown_requested",
+    "signal": signal,
+    "batch_id": batch_id,
+}))
+PYEOF
+}
+
+log_shutdown_complete() {
+  local cancelled_csv="${1:-}"
+  python3 - "$cancelled_csv" "$BATCH_ID" <<'PYEOF'
+import datetime, json, sys
+_, cancelled_csv, batch_id = sys.argv
+cancelled_tasks = [item for item in cancelled_csv.split(",") if item]
+print(json.dumps({
+    "ts": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "event": "shutdown_complete",
+    "batch_id": batch_id,
+    "cancelled_tasks": cancelled_tasks,
+}))
+PYEOF
+}
+
+handle_shutdown() {
+  local signal="$1"
+  local exit_code=143
+  [ "$signal" = "SIGINT" ] && exit_code=130
+  [ "$SHUTDOWN_IN_PROGRESS" = "true" ] && exit "$exit_code"
+  SHUTDOWN_IN_PROGRESS=true
+
+  trap - TERM INT
+  set +e
+
+  log_shutdown_requested "$signal" >> "$LOG_FILE"
+
+  local -a cancelled_tasks=()
+  local pid_file task_id pid waited pid_cmd in_batch spec batch_tid
+  shopt -s nullglob
+  for pid_file in "$PIDS_DIR"/*.pid; do
+    [ -f "$pid_file" ] || continue
+    task_id="$(basename "$pid_file" .pid)"
+    if [ "${TASK_FILES+x}" = "x" ]; then
+      in_batch=false
+      for spec in "${TASK_FILES[@]}"; do
+        batch_tid=$(parse_front "$spec" "id" "unknown")
+        if [ "$batch_tid" = "$task_id" ]; then
+          in_batch=true
+          break
+        fi
+      done
+      [ "$in_batch" = "true" ] || continue
+    fi
+    pid="$(tr -d '[:space:]' < "$pid_file" 2>/dev/null || true)"
+    if [[ "$pid" =~ ^[0-9]+$ ]]; then
+      pid_cmd="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+      [[ "$pid_cmd" == *"agent.sh"* && "$pid_cmd" == *"$task_id"* ]] || { rm -f "$pid_file"; continue; }
+      kill -TERM "$pid" 2>/dev/null || true
+      waited=0
+      while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt 10 ]; do
+        sleep 1
+        waited=$((waited + 1))
+      done
+      if kill -0 "$pid" 2>/dev/null; then
+        kill -KILL "$pid" 2>/dev/null || true
+      fi
+    fi
+    : > "$RESULTS_DIR/${task_id}.cancelled"
+    rm -f "$pid_file"
+    cancelled_tasks+=("$task_id")
+  done
+  shopt -u nullglob
+
+  local cancelled_csv=""
+  if [ ${#cancelled_tasks[@]} -gt 0 ]; then
+    cancelled_csv=$(IFS=,; echo "${cancelled_tasks[*]}")
+  fi
+  log_shutdown_complete "$cancelled_csv" >> "$LOG_FILE"
+
+  exit "$exit_code"
+}
+
+trap 'handle_shutdown SIGTERM' TERM
+trap 'handle_shutdown SIGINT' INT
+
+FAILURE_MODE="skip-failed"
+MAX_FAILURES=0
+NOTIFY_ON_FAILURE=false
+batch_failure_count=0
+batch_abort=false
+declare -a FAILED_TASK_SPECS=()
+
+# Generate Trace ID: <batch-id>-<timestamp>-<random4chars>
+TS_TAG=$(date +%Y%m%d-%H%M%S)
+RND_TAG="$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 4 || true)"
+[ -n "$RND_TAG" ] || RND_TAG="rand"
+export ORCH_TRACE_ID="${BATCH_ID}-${TS_TAG}-${RND_TAG}"
+echo "[dispatch] trace_id=$ORCH_TRACE_ID"
+
+# ── frontmatter parser (Python-based, robust) ────────────────────────────────
+# Uses Python to parse YAML frontmatter reliably — handles quoted values,
+# inline comments, multi-word values, and lists.
+
+# Parse a single YAML frontmatter key. Returns default if key missing.
+# Usage: parse_front <file> <key> [default]
+parse_front() {
+  local file="$1" key="$2" default="${3:-}"
+  python3 -c "
+import sys, re
+with open(sys.argv[1]) as f:
+    text = f.read()
+m = re.match(r'^---\s*\n(.*?)\n---', text, re.DOTALL)
+if not m:
+    print(sys.argv[3], end='')
+    sys.exit(0)
+for line in m.group(1).splitlines():
+    line = line.strip()
+    if line.startswith(sys.argv[2] + ':'):
+        val = line[len(sys.argv[2])+1:].strip()
+        # Remove inline comments (but not inside quotes)
+        if val and val[0] not in ('\"', \"'\", '['):
+            val = re.sub(r'\s+#.*$', '', val)
+        # Strip surrounding quotes
+        if len(val) >= 2 and val[0] == val[-1] and val[0] in ('\"', \"'\"):
+            val = val[1:-1]
+        print(val, end='')
+        sys.exit(0)
+print(sys.argv[3], end='')
+" "$file" "$key" "$default"
+}
+
+# Extract prompt body (everything after second ---)
+parse_body() {
+  local file="$1"
+  python3 -c "
+import sys, re
+with open(sys.argv[1]) as f:
+    text = f.read()
+m = re.match(r'^---\s*\n.*?\n---\s*\n?(.*)\Z', text, re.DOTALL)
+if m:
+    print(m.group(1).rstrip())
+" "$file"
+}
+
+# Parse YAML list: context_from: [task-a, task-b] → "task-a task-b"
+# Also handles bare values: context_from: task-a → "task-a"
+parse_list() {
+  local file="$1" key="$2"
+  python3 -c "
+import sys, re
+with open(sys.argv[1]) as f:
+    text = f.read()
+m = re.match(r'^---\s*\n(.*?)\n---', text, re.DOTALL)
+if not m:
+    sys.exit(0)
+for line in m.group(1).splitlines():
+    line = line.strip()
+    if line.startswith(sys.argv[2] + ':'):
+        val = line[len(sys.argv[2])+1:].strip()
+        # Strip inline comments for unquoted values
+        if val and val[0] not in ('\"', \"'\"):
+            val = re.sub(r'\s+#.*$', '', val).strip()
+        # Handle [item1, item2] list syntax
+        if val.startswith('[') and val.endswith(']'):
+            items = val[1:-1].split(',')
+        else:
+            items = val.split(',')
+        cleaned = [i.strip().strip('\"').strip(\"'\") for i in items if i.strip()]
+        print(' '.join(cleaned), end='')
+        sys.exit(0)
+" "$file" "$key"
+}
+
+load_batch_conf() {
+  local conf_file="$1"
+  local parsed_lines
+  [ -f "$conf_file" ] || return 0
+
+  parsed_lines="$(python3 - "$conf_file" <<'PYEOF'
+import re
+import sys
+
+_, conf_path = sys.argv
+allowed = {"failure_mode", "max_failures", "notify_on_failure"}
+parsed = {}
+
+with open(conf_path, "r", encoding="utf-8", errors="replace") as f:
+    for raw in f:
+        line = raw.strip()
+        if not line or line.startswith("#") or ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        key = key.strip()
+        if key not in allowed:
+            continue
+        value = value.strip()
+        if value and value[0] not in ("'", '"'):
+            value = re.sub(r"\s+#.*$", "", value).strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+            value = value[1:-1].strip()
+        parsed[key] = value
+
+for key in ("failure_mode", "max_failures", "notify_on_failure", "budget_tokens"):
+    if key in parsed:
+        print(f"{key}={parsed[key]}")
+PYEOF
+)"
+
+  BUDGET_TOKENS=0
+  while IFS='=' read -r key value; do
+    [ -z "${key:-}" ] && continue
+    case "$key" in
+      failure_mode) FAILURE_MODE="$value" ;;
+      max_failures) MAX_FAILURES="$value" ;;
+      notify_on_failure) NOTIFY_ON_FAILURE="$value" ;;
+      budget_tokens) BUDGET_TOKENS="$value" ;;
+    esac
+  done <<EOF
+$parsed_lines
+EOF
+
+  case "$FAILURE_MODE" in
+    fail-fast|skip-failed|retry-failed) ;;
+    *) FAILURE_MODE="skip-failed" ;;
+  esac
+
+  if ! [[ "$MAX_FAILURES" =~ ^[0-9]+$ ]]; then
+    MAX_FAILURES=0
+  fi
+
+  NOTIFY_ON_FAILURE=$(printf '%s' "$NOTIFY_ON_FAILURE" | tr '[:upper:]' '[:lower:]')
+  case "$NOTIFY_ON_FAILURE" in
+    true|1|yes|on) NOTIFY_ON_FAILURE=true ;;
+    *) NOTIFY_ON_FAILURE=false ;;
+  esac
+}
+
+is_failed_spec() {
+  local spec="$1"
+  local failed_spec
+  for failed_spec in "${FAILED_TASK_SPECS[@]:-}"; do
+    [ -z "$failed_spec" ] && continue
+    [ "$failed_spec" = "$spec" ] && return 0
+  done
+  return 1
+}
+
+record_failed_spec() {
+  local spec="$1"
+  is_failed_spec "$spec" && return 0
+  FAILED_TASK_SPECS+=("$spec")
+}
+
+handle_task_failure() {
+  local tid="$1" spec="$2"
+  batch_failure_count=$((batch_failure_count + 1))
+  record_failed_spec "$spec"
+
+  [ "$NOTIFY_ON_FAILURE" = "true" ] && \
+    echo "[dispatch] NOTICE: task failure recorded for $tid (count=$batch_failure_count)"
+
+  if [ "$MAX_FAILURES" -gt 0 ] && [ "$batch_failure_count" -ge "$MAX_FAILURES" ]; then
+    echo "[dispatch] MAX FAILURES ($MAX_FAILURES) REACHED — aborting"
+    batch_abort=true
+    return 0
+  fi
+
+  case "$FAILURE_MODE" in
+    fail-fast)
+      echo "[dispatch] FAIL-FAST: $tid failed — aborting remaining tasks"
+      batch_abort=true
+      ;;
+    skip-failed)
+      echo "[dispatch] SKIP: $tid failed — continuing with remaining tasks"
+      ;;
+  esac
+}
+
+mark_remaining_skipped() {
+  local spec tid
+  for spec in "${TASK_FILES[@]}"; do
+    tid=$(parse_front "$spec" "id" "unknown")
+    if [ -f "$RESULTS_DIR/${tid}.out" ] && [ -s "$RESULTS_DIR/${tid}.out" ]; then
+      continue
+    fi
+    [ -f "$RESULTS_DIR/${tid}.skipped" ] && continue
+    [ -f "$RESULTS_DIR/${tid}.skipped.abort" ] && continue
+    is_failed_spec "$spec" && continue
+    : > "$RESULTS_DIR/${tid}.skipped.abort"
+  done
+}
+
+# ── status display ────────────────────────────────────────────────────────────
+show_status() {
+  echo "=== Batch: $BATCH_ID ==="
+  local total=0 done_count=0 failed=0 pending=0
+  for spec in "$BATCH_DIR"/task-*.md; do
+    [ -f "$spec" ] || continue
+    total=$((total + 1))
+    local tid
+    tid=$(parse_front "$spec" "id" "unknown")
+    local agent
+    agent=$(parse_front "$spec" "agent" "?")
+    if [ -f "$RESULTS_DIR/${tid}.out" ]; then
+      local size
+      size=$(wc -c < "$RESULTS_DIR/${tid}.out" | tr -d ' ')
+      if [ "$size" -gt 50 ]; then
+        echo "  ✅ $tid ($agent) — ${size} bytes"
+        done_count=$((done_count + 1))
+      else
+        echo "  ❌ $tid ($agent) — ${size} bytes (likely failed)"
+        failed=$((failed + 1))
+      fi
+    else
+      echo "  ⏳ $tid ($agent) — pending"
+      pending=$((pending + 1))
+    fi
+  done
+  echo "--- Total: $total | Done: $done_count | Failed: $failed | Pending: $pending ---"
+}
+
+if [ "$MODE" = "--status" ]; then
+  show_status
+  exit 0
+fi
+
+load_batch_conf "$BATCH_CONF"
+echo "[dispatch] failure_mode=$FAILURE_MODE max_failures=$MAX_FAILURES notify_on_failure=$NOTIFY_ON_FAILURE"
+
+# ── collect and sort tasks by priority ─────────────────────────────────────────
+declare -a TASK_FILES_HIGH=()
+declare -a TASK_FILES_NORMAL=()
+declare -a TASK_FILES_LOW=()
+
+for spec in "$BATCH_DIR"/task-*.md; do
+  [ -f "$spec" ] || continue
+  prio=$(parse_front "$spec" "priority" "normal")
+  case "$prio" in
+    high)   TASK_FILES_HIGH+=("$spec") ;;
+    low)    TASK_FILES_LOW+=("$spec") ;;
+    *)      TASK_FILES_NORMAL+=("$spec") ;;
+  esac
+done
+
+# Merge: high first, then normal, then low (safe empty-array expansion for set -u)
+declare -a TASK_FILES=(
+  ${TASK_FILES_HIGH[@]+"${TASK_FILES_HIGH[@]}"}
+  ${TASK_FILES_NORMAL[@]+"${TASK_FILES_NORMAL[@]}"}
+  ${TASK_FILES_LOW[@]+"${TASK_FILES_LOW[@]}"}
+)
+
+if [ ${#TASK_FILES[@]} -eq 0 ]; then
+  echo "[dispatch] no task-*.md files found in $BATCH_DIR" >&2
+  exit 1
+fi
+
+# ── deadline check ────────────────────────────────────────────────────────────
+for spec in "${TASK_FILES[@]}"; do
+  dl=$(parse_front "$spec" "deadline" "")
+  if [ -n "$dl" ]; then
+    dl_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$dl" +%s 2>/dev/null || date -d "$dl" +%s 2>/dev/null || echo "0")
+    now_epoch=$(date +%s)
+    if [ "$dl_epoch" -gt 0 ] && [ "$now_epoch" -gt "$dl_epoch" ]; then
+      tid=$(parse_front "$spec" "id" "?")
+      echo "[dispatch] ⚠️  OVERDUE: $tid deadline was $dl"
+    fi
+  fi
+done
+
+echo "[dispatch] batch=$BATCH_ID tasks=${#TASK_FILES[@]} mode=$MODE priority_order=[${#TASK_FILES_HIGH[@]}H/${#TASK_FILES_NORMAL[@]}N/${#TASK_FILES_LOW[@]}L]"
+
+# Clear per-run skip markers for current batch tasks.
+for spec in "${TASK_FILES[@]}"; do
+  tid=$(parse_front "$spec" "id" "unknown")
+  rm -f "$RESULTS_DIR/${tid}.skipped"
+  rm -f "$RESULTS_DIR/${tid}.skipped.abort"
+done
+
+# ── circular dependency detection (DFS) ──────────────────────────────────
+# Detects cycles in depends_on graph BEFORE dispatching. Exits with error if found.
+check_cycles() {
+  python3 - "${TASK_FILES[@]}" <<'PYEOF'
+import sys, re
+
+# Build adjacency list: task_id -> [dependency_ids]
+graph = {}
+for filepath in sys.argv[1:]:
+    with open(filepath) as f:
+        text = f.read()
+    m = re.match(r'^---\s*\n(.*?)\n---', text, re.DOTALL)
+    tid, deps = "unknown", []
+    if m:
+        for line in m.group(1).splitlines():
+            line = line.strip()
+            if line.startswith('id:'):
+                tid = line[3:].strip().strip('"').strip("'")
+            elif line.startswith('depends_on:'):
+                val = line[11:].strip()
+                if val.startswith('[') and val.endswith(']'):
+...
+[CONTENT COMPRESSED: 1111 lines truncated]
