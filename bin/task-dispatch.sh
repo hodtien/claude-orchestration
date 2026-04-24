@@ -40,6 +40,13 @@ fi
 [ -f "$SCRIPT_DIR/../lib/context-compressor.sh" ] && . "$SCRIPT_DIR/../lib/context-compressor.sh" || compress_session() { return 0; }
 # shellcheck source=../lib/consensus-vote.sh
 [ -f "$SCRIPT_DIR/../lib/consensus-vote.sh" ] && . "$SCRIPT_DIR/../lib/consensus-vote.sh" || true
+# shellcheck source=../lib/task-status.sh
+if [ -f "$SCRIPT_DIR/../lib/task-status.sh" ]; then
+    . "$SCRIPT_DIR/../lib/task-status.sh"
+else
+    write_task_status() { return 0; }
+    build_status_json() { return 0; }
+fi
 BATCH_DIR="${1:?Usage: task-dispatch.sh <batch-dir> [--parallel|--status]}"
 MODE="${2:---sequential}"
 # Always retry skipped/failed tasks — no flag needed
@@ -148,6 +155,13 @@ handle_shutdown() {
     : > "$RESULTS_DIR/${task_id}.cancelled"
     rm -f "$pid_file"
     cancelled_tasks+=("$task_id")
+    # Phase 8.1: write status JSON for cancelled task
+    local _ts_now
+    _ts_now=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+    local _cjson
+    _cjson=$(build_status_json "$task_id" "" "cancelled" "cancelled" \
+      "${task_id}.out" "0" "null" "" "" "0.0" "0" ".cancelled" "0" "$_ts_now" "$_ts_now" 2>/dev/null || true)
+    [ -n "$_cjson" ] && write_task_status "$task_id" "$_cjson" 2>/dev/null || true
   done
   shopt -u nullglob
 
@@ -778,6 +792,72 @@ Apply the changes now."
   fi
 }
 
+# ── Phase 8.1: terminal status JSON helpers ───────────────────────────────────
+
+# Write consensus-path status JSON. Replaces individual writes per terminal point.
+# Args: tid task_type strategy final_state start_epoch [winner] [candidates_csv]
+#       [successful_csv] [score] [refl_iter] [markers_csv]
+_write_status_consensus() {
+    local tid="$1" task_type="$2" strategy="$3" final_state="$4"
+    local start_epoch="$5" winner="${6:-}" cand_csv="${7:-}" succ_csv="${8:-}"
+    local score="${9:-0.0}" refl_iter="${10:-0}" markers_csv="${11:-}"
+
+    local _end_epoch _completed_at _started_at _duration
+    local _out_bytes _refl_iter _status_json _cand_csv _succ_csv _markers
+
+    _end_epoch=$(date -u '+%s')
+    _completed_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ' -d "@$_end_epoch" 2>/dev/null || \
+      date -u '+%Y-%m-%dT%H:%M:%SZ')
+    _started_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ' -d "@$start_epoch" 2>/dev/null || \
+      date -u '+%Y-%m-%dT%H:%M:%SZ')
+    _duration=$(($_end_epoch - start_epoch))
+
+    _out_bytes=0
+    [ -s "$RESULTS_DIR/${tid}.out" ] && _out_bytes=$(wc -c < "$RESULTS_DIR/${tid}.out" | tr -d ' ')
+
+    # Reflexion iterations
+    _refl_iter=$(consensus_iteration_count "$tid" 2>/dev/null || echo "0")
+
+    # Build markers from existing marker files
+    _markers=""
+    for _m in failed exhausted needs_revision cancelled; do
+        [ -f "$RESULTS_DIR/${tid}.${_m}" ] && _markers="${_markers}.${_m},"
+    done
+    _markers="${_markers%,}"
+
+    _status_json=$(build_status_json \
+        "$tid" "$task_type" "$strategy" "$final_state" "${tid}.out" "$_out_bytes" \
+        "${winner:-merged}" "${cand_csv:-}" "${succ_csv:-}" "$score" \
+        "$_refl_iter" "$_markers" "$_duration" "$_started_at" "$_completed_at")
+    write_task_status "$tid" "$_status_json"
+}
+
+# Write first_success-path status JSON
+_write_status_first_success() {
+    local tid="$1" task_type="$2" strategy="$3" final_state="$4"
+    local start_epoch="$5" winner="${6:-}" cand_csv="${7:-}" succ_csv="${8:-}"
+    local score="${9:-0.0}" refl_iter="${10:-0}" markers_csv="${11:-}"
+
+    local _end_epoch _completed_at _started_at _duration
+    local _out_bytes _status_json
+
+    _end_epoch=$(date -u '+%s')
+    _completed_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ' -d "@$_end_epoch" 2>/dev/null || \
+      date -u '+%Y-%m-%dT%H:%M:%SZ')
+    _started_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ' -d "@$start_epoch" 2>/dev/null || \
+      date -u '+%Y-%m-%dT%H:%M:%SZ')
+    _duration=$(($_end_epoch - start_epoch))
+
+    _out_bytes=0
+    [ -s "$RESULTS_DIR/${tid}.out" ] && _out_bytes=$(wc -c < "$RESULTS_DIR/${tid}.out" | tr -d ' ')
+
+    _status_json=$(build_status_json \
+        "$tid" "$task_type" "$strategy" "$final_state" "${tid}.out" "$_out_bytes" \
+        "${winner:-}" "${cand_csv:-}" "${succ_csv:-}" "$score" \
+        "${refl_iter:-0}" "${markers_csv:-}" "$_duration" "$_started_at" "$_completed_at")
+    write_task_status "$tid" "$_status_json"
+}
+
 # ── consensus fan-out dispatch (Phase 7.1b) ───────────────────────────────────
 dispatch_task_consensus() {
  local spec="$1"
@@ -791,6 +871,10 @@ dispatch_task_consensus() {
 
  local start_ts end_ts elapsed pid exit_code out_size safe_name
  local successful_count=0 winner_output winner_agent=""
+
+ # Phase 8.1: epoch timestamp for duration tracking
+ local _start_epoch
+ _start_epoch=$(date -u '+%s')
 
  tid=$(parse_front "$spec" "id" "unknown")
  candidates_dir="$RESULTS_DIR/${tid}.candidates"
@@ -979,6 +1063,10 @@ dispatch_task_consensus() {
      echo "[consensus] $tid → EXHAUSTED after 2 reflexion attempts"
      : > "$RESULTS_DIR/${tid}.failed"
      write_consensus_json_exhausted "$tid" "$task_type" 0 0.0
+     # Phase 8.1: write status JSON — no survivors, all exhausted
+     _cand_csv=$(IFS=,; echo "${candidates_list[*]}")
+     _write_status_consensus "$tid" "$task_type" "failed" "failed" \
+       "$_start_epoch" "null" "$_cand_csv" "" "0.0" || true
      return 1
    fi
  fi
@@ -1024,6 +1112,11 @@ print(json.dumps({
 }, indent=2))
 PYEOF
 
+   # Phase 8.1: write status JSON — single winner consensus
+   _cand_csv=$(IFS=,; echo "${candidates_list[*]}")
+   _succ_csv="$winner_agent"
+   _write_status_consensus "$tid" "$task_type" "consensus" "done" \
+     "$_start_epoch" "$winner_agent" "$_cand_csv" "$_succ_csv" "0.0" || true
    return 0
  fi
 
@@ -1090,6 +1183,11 @@ print(json.dumps(sys.stdin.read()))
      printf '%s' "$merged_output" > "$RESULTS_DIR/${tid}.out"
      : > "$RESULTS_DIR/${tid}.exhausted"
      write_consensus_json_exhausted "$tid" "$task_type" "$successful_count" "$computed_score"
+     # Phase 8.1: write status JSON — disagreement exhausted
+     _cand_csv=$(IFS=,; echo "${candidates_list[*]}")
+     _succ_csv=$(IFS=,; echo "${successful_candidates[*]}")
+     _write_status_consensus "$tid" "$task_type" "consensus_exhausted" "exhausted" \
+       "$_start_epoch" "merged" "$_cand_csv" "$_succ_csv" "$computed_score" || true
      return 0
    fi
  fi
@@ -1132,6 +1230,12 @@ PYEOF
  local result_size
  result_size=$(wc -c < "$RESULTS_DIR/${tid}.out" | tr -d ' ')
  echo "[consensus] $tid → DONE (merged output: ${result_size} bytes, winner=$winner_agent)"
+
+ # Phase 8.1: write status JSON — multi-candidate merged success
+ _cand_csv=$(IFS=,; echo "${candidates_list[*]}")
+ _succ_csv=$(IFS=,; echo "${successful_candidates[*]}")
+ _write_status_consensus "$tid" "$task_type" "consensus" "done" \
+   "$_start_epoch" "merged" "$_cand_csv" "$_succ_csv" "$computed_score" || true
 
  return 0
 }
@@ -1232,6 +1336,10 @@ dispatch_task_first_success() {
   local actual_duration=0 task_start task_end task_rc=1 agent_pid=0 pid_file cancelled_marker
   local agents_front agent_candidates has_agents_list=false candidate_agent failover_position=0
   local circuit_breaker_sh health_rc=0
+
+  # Phase 8.1: epoch timestamp for duration tracking
+  local _fs_start_epoch
+  _fs_start_epoch=$(date -u '+%s')
 
   tid=$(parse_front "$spec" "id" "unknown")
   pid_file="$PIDS_DIR/${tid}.pid"
@@ -1609,6 +1717,10 @@ PYEOF
           2>/dev/null || true
       fi
 
+      # Phase 8.1: write status JSON — first_success done
+      _write_status_first_success "$tid" "$task_type" "first_success" "done" \
+        "$_fs_start_epoch" "$agent" "$agent" "$agent" "0.0" "0" "" || true
+
       return 0
     fi
 
@@ -1677,6 +1789,13 @@ EOF
   # SLO breach check on failure path too
   check_slo_breach "$tid" "$agent" "$actual_duration" "failed" "$spec"
   check_budget
+
+  # Phase 8.1: write status JSON — first_success failed
+  local _fs_cand_csv
+  _fs_cand_csv=$(echo "$agent_candidates" | tr ' ' ',')
+  _write_status_first_success "$tid" "$task_type" "failed" "failed" \
+    "$_fs_start_epoch" "" "$_fs_cand_csv" "" "0.0" "0" "" || true
+
   return 1
 }
 
