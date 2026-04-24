@@ -162,10 +162,10 @@ candidates_output=$(get_parallel_candidates "architecture_analysis")
 [[ "$VERBOSE" == "true" ]] && echo "    candidates = $candidates_output"
 candidates_count=$(echo "$candidates_output" | grep -c . || echo 0)
 if [[ "$candidates_count" -gt 0 ]]; then
-  if echo "$candidates_output" | grep -q "gemini-pro"; then
-    assert_pass "gemini-pro listed in candidates ($candidates_count total)"
+  if echo "$candidates_output" | grep -q "claude-architect"; then
+    assert_pass "claude-architect listed in candidates ($candidates_count total)"
   else
-    assert_fail "gemini-pro missing from candidates"
+    assert_fail "claude-architect missing from candidates"
   fi
 else
   assert_fail "get_parallel_candidates returned empty"
@@ -190,7 +190,7 @@ setup_batch "test-consensus-routing"
 cat > "$BATCH_DIR/task-arch-test.md" <<'TASKEOF'
 ---
 id: arch-test-001
-agent: gemini-pro
+agent: claude-architect
 task_type: architecture_analysis
 priority: normal
 ---
@@ -202,11 +202,11 @@ failure_mode: skip-failed
 CONFEOF
 
 # Mock outputs for 3 parallel candidates for architecture_analysis
-# Key: normalized names (slashes->underscores for shell env var lookup)
-export MOCK_OUTPUT_gemini_pro="Consensus output from gemini-pro"
+# Key: normalized names (slashes/dashes->underscores for shell env var lookup)
+export MOCK_OUTPUT_claude_architect="Consensus output from claude-architect"
 export MOCK_OUTPUT_cc_claude_sonnet_4_6="Consensus output from cc/claude-sonnet-4-6"
 export MOCK_OUTPUT_minimax_code="Consensus output from minimax-code"
-export MOCK_EXIT_gemini_pro=0
+export MOCK_EXIT_claude_architect=0
 export MOCK_EXIT_cc_claude_sonnet_4_6=0
 export MOCK_EXIT_minimax_code=0
 
@@ -238,17 +238,17 @@ setup_batch "test-reflexion-all-fail"
 cat > "$BATCH_DIR/task-reflex-001.md" <<'TASKEOF'
 ---
 id: reflex-test-001
-agent: gemini-pro
+agent: claude-architect
 task_type: design_api
 ---
 Design a simple pub/sub system.
 TASKEOF
 
 # Mock all agents to fail
-export MOCK_EXIT_gemini_pro=1
+export MOCK_EXIT_claude_architect=1
 export MOCK_EXIT_cc_claude_sonnet_4_6=1
 export MOCK_EXIT_minimax_code=1
-export MOCK_OUTPUT_gemini_pro=""
+export MOCK_OUTPUT_claude_architect=""
 export MOCK_OUTPUT_cc_claude_sonnet_4_6=""
 export MOCK_OUTPUT_minimax_code=""
 export AGENT_SH_MOCK="$MOCK_AGENT"
@@ -270,7 +270,7 @@ else
   assert_fail "all-fail: reflexion v1 JSON NOT found"
 fi
 
-unset MOCK_EXIT_gemini_pro MOCK_EXIT_cc_claude_sonnet_4_6 MOCK_EXIT_minimax_code
+unset MOCK_EXIT_claude_architect MOCK_EXIT_cc_claude_sonnet_4_6 MOCK_EXIT_minimax_code
 
 # ── Test 8: disagreement triggers reflexion + enriched prompt ──────────────────
 echo ""
@@ -281,17 +281,17 @@ setup_batch "test-reflexion-disagree"
 cat > "$BATCH_DIR/task-disagree-001.md" <<'TASKEOF'
 ---
 id: disagree-test-001
-agent: gemini-pro
+agent: claude-architect
 task_type: design_api
 ---
 Design a pub/sub system.
 TASKEOF
 
 # Mock 3 agents with fully disjoint outputs (Jaccard = 0)
-export MOCK_OUTPUT_gemini_pro="design a distributed pub sub broker with message queues"
+export MOCK_OUTPUT_claude_architect="design a distributed pub sub broker with message queues"
 export MOCK_OUTPUT_cc_claude_sonnet_4_6="implement a webhook event notification system with callbacks"
 export MOCK_OUTPUT_minimax_code="build a simple observer pattern library in python"
-export MOCK_EXIT_gemini_pro=0
+export MOCK_EXIT_claude_architect=0
 export MOCK_EXIT_cc_claude_sonnet_4_6=0
 export MOCK_EXIT_minimax_code=0
 export AGENT_SH_MOCK="$MOCK_AGENT"
@@ -309,8 +309,8 @@ else
   assert_fail "disagreement: reflexion v1 JSON NOT found"
 fi
 
-unset MOCK_OUTPUT_gemini_pro MOCK_OUTPUT_cc_claude_sonnet_4_6 MOCK_OUTPUT_minimax_code
-unset MOCK_EXIT_gemini_pro MOCK_EXIT_cc_claude_sonnet_4_6 MOCK_EXIT_minimax_code
+unset MOCK_OUTPUT_claude_architect MOCK_OUTPUT_cc_claude_sonnet_4_6 MOCK_OUTPUT_minimax_code
+unset MOCK_EXIT_claude_architect MOCK_EXIT_cc_claude_sonnet_4_6 MOCK_EXIT_minimax_code
 
 # ── Test 9: exhaustion marker after 2 reflexion attempts ───────────────────────
 echo ""
@@ -372,7 +372,7 @@ setup_batch "test-first-success-status"
 cat > "$BATCH_DIR/task-fs-001.md" <<'TASKEOF'
 ---
 id: fs-status-001
-agent: gemini-pro
+agent: oc-medium
 task_type: implement_feature
 ---
 Implement a foo() function.
@@ -382,14 +382,14 @@ cat > "$BATCH_DIR/batch.conf" <<'CONFEOF'
 failure_mode: skip-failed
 CONFEOF
 
-export MOCK_OUTPUT_gemini_pro="def foo():\n    pass\n# implementation complete"
+export MOCK_OUTPUT_oc_medium="def foo():\n    pass\n# implementation complete"
 export MIN_OUTPUT_LENGTH=0
-export MOCK_EXIT_gemini_pro=0
+export MOCK_EXIT_oc_medium=0
 export AGENT_SH_MOCK="$MOCK_AGENT"
 
-# Reset circuit-breaker state so gemini-pro isn't blocked before test
-bin/circuit-breaker.sh reset gemini-pro 2>/dev/null || true
-bin/circuit-breaker.sh reset cc/claude-sonnet-4-6 2>/dev/null || true
+# Reset circuit-breaker state so oc-medium isn't blocked before test
+bin/circuit-breaker.sh reset oc-medium 2>/dev/null || true
+bin/circuit-breaker.sh reset gh/gpt-5.3-codex 2>/dev/null || true
 bin/circuit-breaker.sh reset minimax-code 2>/dev/null || true
 
 rm -f "$RESULTS_DIR/fs-status-001.status.json" \
@@ -422,7 +422,7 @@ rm -f "$RESULTS_DIR/fs-status-001.status.json" \
  "$RESULTS_DIR/fs-status-001.out" \
  "$RESULTS_DIR/fs-status-001.log" \
  "$RESULTS_DIR/fs-status-001.report.json" 2>/dev/null || true
-unset MOCK_EXIT_gemini_pro MOCK_OUTPUT_gemini_pro
+unset MOCK_EXIT_oc_medium MOCK_OUTPUT_oc_medium
 
 # ── Summary ─────────────────────────────────────────────────────────────────
 echo ""

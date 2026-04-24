@@ -642,7 +642,7 @@ All changes are on a branch — nothing committed to master until user reviews.
 
 ### Context
 
-User added three custom-named router models (`gempro`, `gemmed`, `gemlow`) that go
+User added three custom-named router models (`oc-high`, `oc-medium`, `oc-low`) that go
 through 9router instead of gemini-cli. This is intentional and correct, but it left
 5 consistency issues that need fixing.
 
@@ -663,29 +663,29 @@ Lines 9-10 currently say:
 - Tasks delegated to gemini-cli or gh copilot do NOT go through 9router —
   those CLIs manage their own auth/model.
 ```
-This is now half-wrong: `gh copilot` still manages its own; but `gempro/gemmed/gemlow`
+This is now half-wrong: `gh copilot` still manages its own; but `oc-high/oc-medium/oc-low`
 DO go through 9router. Rewrite to:
 ```
 - `gh copilot` CLI (for gh/gpt-5.3-codex, gh/claude-haiku-4-5) does NOT go through
   9router — it manages its own auth/model.
 - `gemini-cli` is used only when a task explicitly needs 1M-token long context
   (see repo_analysis); gemini-pro/gemini-flash are the only models on that channel.
-- All other models, including `gempro/gemmed/gemlow`, go through 9router.
+- All other models, including `oc-high/oc-medium/oc-low`, go through 9router.
 ```
 
 **7.3 — Naming convention inconsistency**
-Lines 13-16 say: `gemini-* → via gemini-cli`. But `gempro/gemmed/gemlow` don't have
+Lines 13-16 say: `gemini-* → via gemini-cli`. But `oc-high/oc-medium/oc-low` don't have
 `gemini-` prefix and they're NOT via gemini-cli. Fix one of two ways:
 
 - Option A (preferred): update the comment to:
   ```
   - minimax-*          → via 9router (Anthropic-compat adapter)
   - cc/claude-*        → via 9router targeting Claude API
-  - gempro/gemmed/gemlow → via 9router (custom Gemini routing aliases)
+  - oc-high/oc-medium/oc-low → via 9router (custom Gemini routing aliases)
   - gh/*               → via gh copilot CLI (shell exec)
   - gemini-pro/gemini-flash → via gemini-cli (ONLY for 1M-token long context)
   ```
-- Option B: rename `gempro/gemmed/gemlow` to `router-gempro/router-gemmed/router-gemlow`
+- Option B: rename `oc-high/oc-medium/oc-low` to `router-oc-high/router-oc-medium/router-oc-low`
   (more verbose but self-explanatory). This requires updating all 15+ refs in
   task_mapping.
 
@@ -699,7 +699,7 @@ pricing is comparable to Haiku, keep `medium-low`. Leave a one-line comment expl
 **7.5 — Dangling `gh/claude-haiku-4-5`**
 Line 76-80 declares this model but no task uses it. Two options:
 - Add it to `quick_answer.parallel` or `summarize.parallel` alongside minimax-code
-  and gemlow (as another cheap option for racing)
+  and oc-low (as another cheap option for racing)
 - Delete the declaration
 
 **Recommend: add to quick_answer / summarize / classify_intent parallel. More racers
