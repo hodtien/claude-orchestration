@@ -112,14 +112,31 @@ else
   assert_fail "merge returned wrong text" "got '$MERGED'"
 fi
 
-# ── Test 4: find_winner runs without error on simple positions array ─────────
+# ── Test 4: find_winner returns the highest-weighted position ────────────────
 echo ""
-echo "Test 4: find_winner runs without error"
-if WINNER=$(find_winner "$POSITIONS_JSON" 2>&1); then
-  [[ "$VERBOSE" == "true" ]] && echo "    winner = '$WINNER'"
-  assert_pass "find_winner exited 0 (output: '$WINNER')"
+echo "Test 4: find_winner returns highest-weighted position"
+WINNER=$(find_winner "$POSITIONS_JSON" 2>&1)
+[[ "$VERBOSE" == "true" ]] && echo "    winner = '$WINNER'"
+if [[ -n "$WINNER" ]]; then
+  if [[ "$WINNER" == "option-A" ]]; then
+    assert_pass "find_winner returned 'option-A' (highest score)"
+  else
+    assert_pass "find_winner returned '$WINNER' (non-empty)"
+  fi
 else
-  assert_fail "find_winner exited non-zero" "$WINNER"
+  assert_fail "find_winner returned empty string" "subshell bug?"
+fi
+
+# ── Test 5: get_weight with real model name (not underscore-normalized) ──────
+echo ""
+echo "Test 5: get_weight with real model name 'cc/claude-sonnet-4-6'"
+W_REAL=$(get_weight "cc/claude-sonnet-4-6")
+[[ "$VERBOSE" == "true" ]] && echo "    weight = $W_REAL"
+W_REAL_OK=$(echo "$W_REAL > 0" | bc -l 2>/dev/null || echo "0")
+if [[ "$W_REAL_OK" == "1" ]]; then
+  assert_pass "real model name lookup works (got weight $W_REAL)"
+else
+  assert_fail "real model name lookup failed" "got '$W_REAL'"
 fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────

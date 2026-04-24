@@ -3,6 +3,10 @@
 
 # bash 3.x (macOS default) doesn't support associative arrays.
 # Define no-op stubs so callers don't fail with "command not found".
+#
+# NOTE: These stubs intentionally return safe defaults (never fail), so
+# callers on bash 3.2 see a "neutral" consensus path (default weight,
+# no winner, empty merge) and naturally fall through to first_success.
 if [[ ${BASH_VERSION%%.*} -lt 4 ]]; then
     get_weight()        { echo "1.0"; }
     compute_score()     { echo "1.0"; }
@@ -13,18 +17,18 @@ fi
 
 # NOTE: Do NOT use set -e in this file. This lib is SOURCEd by callers that manage their own error handling.
 
-# Agent weights for voting — remapped to current model names from config/models.yaml
+# Agent weights for voting — keys match real agent names from config/models.yaml
 declare -A AGENT_WEIGHTS=(
-    [cc_claude_sonnet_4_6]=2.0
-    [cc_claude_opus_4_6]=2.5
-    [gh_gpt_5_3_codex]=2.0
-    [gemini_pro]=2.0
-    [gempro]=2.0
-    [gemmed]=1.5
-    [minimax_code]=1.5
-    [cc_claude_haiku_4_5]=1.0
-    [gh_claude_haiku_4_5]=1.0
-    [gemini_flash]=1.0
+    ["cc/claude-sonnet-4-6"]=2.0
+    ["cc/claude-opus-4-6"]=2.5
+    ["gh/gpt-5.3-codex"]=2.0
+    ["gemini-pro"]=2.0
+    ["gempro"]=2.0
+    ["gemmed"]=1.5
+    ["minimax-code"]=1.5
+    ["cc/claude-haiku-4-5"]=1.0
+    ["gh/claude-haiku-4-5"]=1.0
+    ["gemini-flash"]=1.0
     [default]=1.0
 )
 
@@ -54,8 +58,8 @@ find_winner() {
     local max_score=0
     local winner=""
 
-    # Parse JSON array of positions
-    echo "$positions_json" | jq -r '.[] | @json' 2>/dev/null | while IFS= read -r pos; do
+    # Parse JSON array of positions — use process substitution to avoid subshell bug
+    while IFS= read -r pos; do
         local agent confidence position
         agent=$(echo "$pos" | jq -r '.agent_id')
         confidence=$(echo "$pos" | jq -r '.confidence')
@@ -71,7 +75,7 @@ find_winner() {
             max_score="$score"
             winner="$position"
         fi
-    done
+    done < <(echo "$positions_json" | jq -r '.[] | @json' 2>/dev/null)
 
     echo "$winner"
 }
