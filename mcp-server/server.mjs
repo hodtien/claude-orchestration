@@ -18,7 +18,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { execSync } from "child_process";
+import { execSync, spawnSync } from "child_process";
 import { readdirSync, readFileSync, statSync, existsSync } from "fs";
 import { join, basename } from "path";
 import { homedir } from "os";
@@ -376,6 +376,27 @@ function checkEscalations() {
   };
 }
 
+// ── trace-query helper (Phase 8.3) ──────────────────────────────────────────
+function runTraceQuery(subcommand, args) {
+  const helperPath = join(PROJECT_ROOT, "lib", "trace-query.sh");
+  if (!existsSync(helperPath)) {
+    return { error: "lib/trace-query.sh not found" };
+  }
+  try {
+    const result = spawnSync("bash", [helperPath, subcommand, ...args], {
+      encoding: "utf8",
+      timeout: 30000,
+      env: { ...process.env, PROJECT_ROOT },
+    });
+    if (result.status === 0 && result.stdout) {
+      return JSON.parse(result.stdout);
+    }
+    return { found: false, error: (result.stderr || "").slice(0, 500) };
+  } catch (e) {
+    return { found: false, error: String(e).slice(0, 500) };
+  }
+}
+
 // ── MCP server setup ─────────────────────────────────────────────────────────
 const server = new Server(
   { name: "orch-notify", version: "1.0.0" },
@@ -425,6 +446,43 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         "Check DLQ-based escalations for blocked/failed tasks and return PM-friendly remediation hints.",
       inputSchema: { type: "object", properties: {}, required: [] },
     },
+    {
+      name: "get_task_trace",
+      description:
+        "Fetch full execution trace for one task — status.json fields, all events from tasks.jsonl, reflexion history, audit hints. Returns found=true + full data, or found=false if task has no events and no status.json.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          task_id: { type: "string", description: "Task ID (e.g., 'arch-test-001')" },
+        },
+        required: ["task_id"],
+      },
+    },
+    {
+      name: "get_trace_waterfall",
+      description:
+        "Fetch waterfall timing for a trace — per-agent lanes, concurrency depth, parallel speedup. Use this to understand how agents overlapped during a consensus fan-out.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          trace_id: { type: "string", description: "Trace ID (e.g., 'trace-abc')" },
+        },
+        required: ["trace_id"],
+      },
+    },
+    {
+      name: "recent_failures",
+      description:
+        "Fetch most recent tasks with final_state in {failed, exhausted, needs_revision}. Use this to identify which tasks need attention and what signals (reflexion iterations, consensus score, markers) indicate root cause.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          limit: { type: "integer", description: "Max results to return (default 10, cap 100)" },
+          since: { type: "string", description: "Time window in Nh or Nd format (e.g., '24h', '7d')" },
+        },
+        required: [],
+      },
+    },
   ],
 }));
 
@@ -451,6 +509,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     case "check_escalations":
       result = checkEscalations();
       break;
+    case "get_task_trace":
+      result = runTraceQuery("get_task_trace", [args?.task_id || ""]);
+      break;
+    case "get_trace_waterfall":
+      result = runTraceQuery("get_trace_waterfall", [args?.trace_id || ""]);
+      break;
+    case "recent_failures": {
+      const rfArgs = [];
+      if (args?.limit != null) { rfArgs.push("--limit", String(args.limit)); }
+      if (args?.since)         { rfArgs.push("--since", args.since); }
+      result = runTraceQuery("recent_failures", rfArgs);
+      break;
+    }
     default:
       return {
         content: [{ type: "text", text: `Unknown tool: ${name}` }],

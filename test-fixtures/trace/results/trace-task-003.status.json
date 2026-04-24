@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "task_id": "trace-task-003",
+  "task_type": "code_review",
+  "strategy_used": "first_success",
+  "final_state": "failed",
+  "output_file": "trace-task-003.out",
+  "output_bytes": 0,
+  "winner_agent": null,
+  "candidates_tried": ["gemini-pro"],
+  "successful_candidates": [],
+  "consensus_score": 0.0,
+  "reflexion_iterations": 0,
+  "markers": [".failed"],
+  "duration_sec": 5.0,
+  "started_at": "2026-04-24T10:00:00Z",
+  "completed_at": "2026-04-24T10:00:05Z"
+}

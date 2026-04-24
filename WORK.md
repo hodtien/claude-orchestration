@@ -43,8 +43,18 @@ Phase 7 order: **7.2 first → 7.1 second** (eval-harness needed to measure cons
   - 7 terminal points wired (4 consensus + 3 first_success)
   - macOS BSD date fix applied, dead markers_csv param removed
   - 5/5 tests PASS, no regression
-- [ ] `8.2` Central `config/tool-registry.yaml` (P1)
-- [ ] `8.3` Execution trace viewer via orch-notify MCP (P1)
+- [x] `8.2` `orch-metrics.sh rollup` — .status.json aggregation (P1) ✅ DONE 2026-04-24
+  - `bin/orch-metrics.sh` +~180 lines (rollup subcommand, python in-process aggregator)
+  - 9 fixtures in `test-fixtures/metrics/` covering 4 strategies × 4 final_states + malformed + schema_v2 + old timestamp
+  - `bin/test-orch-metrics-rollup.sh` — 27 tests PASS, runtime 0.046s (<2s budget)
+  - JSON matches spec schema (totals, by_task_type, consensus_score_distribution, reflexion_histogram, final_state_counts)
+  - No regression in event-log mode
+- [x] `8.3` Execution trace viewer via orch-notify MCP (P1) ✅ DONE 2026-04-24
+  - `lib/trace-query.sh` (~220 lines, python3 in-process, 3 ops: get_task_trace / get_trace_waterfall / recent_failures)
+  - `test-fixtures/trace/` (7 files: tasks.jsonl, 3×.status.json, 3×reflexion blobs, audit.jsonl)
+  - `bin/test-trace-query.sh` — 36 tests PASS covering all 8 spec edge cases (0-lane waterfall, limit clamp, malformed JSONL skip, shell-unsafe task_id, etc.)
+  - `mcp-server/server.mjs` — 3 new tool handlers (get_task_trace / get_trace_waterfall / recent_failures) added, thin delegation to lib/trace-query.sh
+  - No regression in existing 6 tools, no new deps beyond python3 stdlib
 - [ ] `8.4` Token budget dashboard in orch-dashboard.sh (P1)
 
 **Phase 9: Advanced Patterns (P2, trigger-based)**
@@ -88,6 +98,7 @@ Phase 7 order: **7.2 first → 7.1 second** (eval-harness needed to measure cons
 
 | Date | What | Where |
 |------|------|-------|
+| 2026-04-24 | **Phase 8.2 DONE** — orch-metrics.sh rollup subcommand: .status.json aggregation by task_type × strategy_used, consensus score distribution, reflexion histogram. 27 tests PASS, 0.046s runtime, no regression in event-log mode. Spec archived. | bin/orch-metrics.sh, bin/test-orch-metrics-rollup.sh, test-fixtures/metrics/*, docs/archive/PROMPT_phase8.2_2026-04-24.md |
 | 2026-04-24 | **Phase 8.1 DONE** — unified task status JSON: lib/task-status.sh, 7 terminal points wired, schema v1, 5 tests PASS, macOS BSD date fix | commit 7f59a73, 1ac531b |
 | 2026-04-24 | **Phase 7.1 COMPLETE** — consensus-vote wired: 7.1a scaffold, 7.1b fan-out dispatch, 7.1c Jaccard similarity merge, 7.1d reflexion loop. 11+9 tests PASS, integration smoke PASS | commits d2a3214, 0c30527, 641a8db, eb2ea71, 12a57fd, d72aa95 |
 | 2026-04-24 | **Phase 7.1b DONE** — consensus fan-out dispatch: helpers, dispatch_task_consensus (368 lines), test-consensus-dispatch.sh (6 tests PASS), integration smoke PASS, rollback 1-line config flip verified | commits 641a8db, eb2ea71 |

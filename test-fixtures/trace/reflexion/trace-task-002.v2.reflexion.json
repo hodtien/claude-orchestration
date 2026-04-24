@@ -1,0 +1,7 @@
+{
+  "iteration": 2,
+  "reason": "retry_exhausted",
+  "score": 0.0,
+  "peer_output_summary": "second attempt also timed out",
+  "at": "2026-04-24T09:00:11Z"
+}

@@ -1,0 +1,13 @@
+{"ts": "2026-04-24T08:00:00Z", "event": "start", "task_id": "trace-task-001", "agent": null, "trace_id": "trace-aaa", "status": "running", "duration_s": 0, "prompt_chars": 500, "output_chars": 0}
+{"ts": "2026-04-24T08:00:02Z", "event": "start", "task_id": "trace-task-001", "agent": "gemini-pro", "trace_id": "trace-aaa", "status": "running", "duration_s": 0, "prompt_chars": 500, "output_chars": 0}
+{"ts": "2026-04-24T08:00:02Z", "event": "start", "task_id": "trace-task-001", "agent": "cc/claude-sonnet-4-6", "trace_id": "trace-aaa", "status": "running", "duration_s": 0, "prompt_chars": 500, "output_chars": 0}
+{"ts": "2026-04-24T08:00:08Z", "event": "complete", "task_id": "trace-task-001", "agent": "gemini-pro", "trace_id": "trace-aaa", "status": "success", "duration_s": 6, "prompt_chars": 500, "output_chars": 1200}
+{"ts": "2026-04-24T08:00:11Z", "event": "complete", "task_id": "trace-task-001", "agent": "cc/claude-sonnet-4-6", "trace_id": "trace-aaa", "status": "success", "duration_s": 9, "prompt_chars": 500, "output_chars": 1400}
+{"ts": "2026-04-24T08:00:14Z", "event": "complete", "task_id": "trace-task-001", "agent": null, "trace_id": "trace-aaa", "status": "success", "duration_s": 14, "prompt_chars": 0, "output_chars": 0}
+{"ts": "2026-04-24T09:00:00Z", "event": "start", "task_id": "trace-task-002", "agent": null, "trace_id": "trace-bbb", "status": "running", "duration_s": 0, "prompt_chars": 300, "output_chars": 0}
+{"ts": "2026-04-24T09:00:01Z", "event": "start", "task_id": "trace-task-002", "agent": "gemini-pro", "trace_id": "trace-bbb", "status": "running", "duration_s": 0, "prompt_chars": 300, "output_chars": 0}
+{"ts": "2026-04-24T09:00:10Z", "event": "complete", "task_id": "trace-task-002", "agent": "gemini-pro", "trace_id": "trace-bbb", "status": "failed", "duration_s": 9, "prompt_chars": 300, "output_chars": 0, "error": "timeout"}
+{"ts": "2026-04-24T09:00:12Z", "event": "complete", "task_id": "trace-task-002", "agent": null, "trace_id": "trace-bbb", "status": "failed", "duration_s": 12, "prompt_chars": 0, "output_chars": 0}
+this is a malformed jsonl line
+{"ts": "2026-04-24T10:00:00Z", "event": "start", "task_id": "trace-task-003", "agent": null, "trace_id": "trace-ccc", "status": "running", "duration_s": 0, "prompt_chars": 200, "output_chars": 0}
+{"ts": "2026-04-24T10:00:05Z", "event": "complete", "task_id": "trace-task-003", "agent": null, "trace_id": "trace-ccc", "status": "success", "duration_s": 5, "prompt_chars": 0, "output_chars": 100}

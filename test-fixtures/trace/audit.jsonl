@@ -1,0 +1,3 @@
+{"event":"tier_assigned","task_id":"trace-task-001","tier":"TIER_STANDARD","tokens_estimated":200,"timestamp":"2026-04-24T07:59:58Z"}
+{"event":"tier_assigned","task_id":"trace-task-002","tier":"TIER_LIGHTWEIGHT","tokens_estimated":100,"timestamp":"2026-04-24T08:59:50Z"}
+{"event":"route_decision","task_id":"trace-task-001","route":"consensus","timestamp":"2026-04-24T07:59:59Z"}
