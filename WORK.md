@@ -65,18 +65,24 @@ Phase 7 order: **7.2 first → 7.1 second** (eval-harness needed to measure cons
 
 **Phase 8 Status: COMPLETE** — 8.1 terminal state → 8.2 rollup → 8.3 trace viewer → 8.4 budget dashboard. Full observability stack done.
 
-**Phase 9: Advanced Patterns (P2, trigger-based)**
-- [ ] `9.1` Multi-turn orchestration sessions (P2)
-- [ ] `9.2` Gibberlink/agent-to-agent protocol stub (P2)
-- [ ] `9.3` Cross-project orchestration (P2)
-- [ ] `9.4` ReAct pattern for orchestration agents (P2)
+**Phase 9: Advanced Patterns — Wire Dormant Scaffolds + Close Feedback Loop**
+
+Full analysis: `docs/PLAN_phase9.md`. Dispatch order: 9.1+9.4 parallel → 9.2 → 9.3.
+
+- [ ] `9.1` Task auto-decomposition (P1) — wire `lib/task-decomposer.sh` into dispatch pre-phase; MCP `decompose_preview`; 15+ tests
+- [ ] `9.2` Learning loop (P1) — wire `lib/learning-engine.sh` after every dispatch completion; `orch-dashboard.sh learn`; MCP `get_routing_advice`; 15+ tests
+- [ ] `9.3` Adaptive dispatch / ReAct (P2) — new `lib/react-loop.sh`; observe/think/act on uncertain tasks; MCP `get_react_trace`; 10+ tests
+- [ ] `9.4` Session context chains (P2) — new `lib/session-context.sh`; compressed session brief across `depends_on` pipeline; 10+ tests
+
+Each sub-phase: 2 task specs (core + test) dispatch-able via `task-dispatch.sh --parallel`.
+Target: +60 tests (136 → 196+). Self-referential: orchestration builds itself.
 
 ---
 
 ## Icebox
 
-- [ ] Phase 8 remaining tasks (tool-registry, trace viewer, budget dashboard)
-- [ ] Phase 9 tasks (multi-turn, agent protocol, cross-project, ReAct)
+- [ ] Cross-project orchestration (wire `lib/cross-project.sh` when second project adopts)
+- [ ] Speculation buffer (`lib/speculation-buffer.sh` — premature without concurrent file-editing agents)
 - [ ] Move 9 deprecated libs → `lib/deprecated/` (cleanup cosmetic)
 - [ ] `D.2` `setup-router.sh apply` to `~/.claude/settings.json`
 
