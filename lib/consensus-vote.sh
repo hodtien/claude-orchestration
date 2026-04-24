@@ -1,26 +1,30 @@
 #!/usr/bin/env bash
 # consensus-vote.sh — Weighted voting logic for Consensus Engine
 
-# bash 3.x (macOS default) doesn't support associative arrays
+# bash 3.x (macOS default) doesn't support associative arrays.
+# Define no-op stubs so callers don't fail with "command not found".
 if [[ ${BASH_VERSION%%.*} -lt 4 ]]; then
+    get_weight()        { echo "1.0"; }
+    compute_score()     { echo "1.0"; }
+    find_winner()       { echo ""; }
+    consensus_merge()    { echo ""; }
     return 0 2>/dev/null || exit 0
 fi
 
 # NOTE: Do NOT use set -e in this file. This lib is SOURCEd by callers that manage their own error handling.
 
-# Agent weights for voting
+# Agent weights for voting — remapped to current model names from config/models.yaml
 declare -A AGENT_WEIGHTS=(
-    [architect]=3.0
-    [security]=3.0
-    [senior-engineer]=2.5
-    [code-reviewer]=2.0
-    [gemini-fast]=2.0
-    [gemini-deep]=2.5
-    [gemini]=2.0
-    [copilot]=1.5
-    [copilot-agent]=1.5
-    [haiku]=1.0
-    [qa-agent]=1.5
+    [cc_claude_sonnet_4_6]=2.0
+    [cc_claude_opus_4_6]=2.5
+    [gh_gpt_5_3_codex]=2.0
+    [gemini_pro]=2.0
+    [gempro]=2.0
+    [gemmed]=1.5
+    [minimax_code]=1.5
+    [cc_claude_haiku_4_5]=1.0
+    [gh_claude_haiku_4_5]=1.0
+    [gemini_flash]=1.0
     [default]=1.0
 )
 
@@ -72,10 +76,17 @@ find_winner() {
     echo "$winner"
 }
 
+# Consensus merge — placeholder returning first candidate output (Phase 7.1c will implement real merge)
+consensus_merge() {
+    local candidates_json="${1:?candidates_json required}"
+    echo "$candidates_json" | jq -r '.[0].output // ""'
+}
+
 # Main
 case "${1:-}" in
     weight)    shift; get_weight "$@" ;;
     score)     shift; compute_score "$@" ;;
     winner)    shift; find_winner "$@" ;;
-    *)         echo "Usage: $0 weight|score|winner" >&2; exit 1 ;;
+    merge)     shift; consensus_merge "$@" ;;
+    *)         echo "Usage: $0 weight|score|winner|merge" >&2; exit 1 ;;
 esac
