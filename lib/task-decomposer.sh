@@ -4,22 +4,42 @@
 
 # NOTE: Do NOT use set -e in this file. This lib is SOURCEd by callers that manage their own error handling.
 
-ORCH_DIR="${ORCH_DIR:-$HOME/.claude/orchestration}"
-DECOMP_DIR="$ORCH_DIR/decomposed"
-TASK_DB="$ORCH_DIR/task-db.jsonl"
+ORCH_DIR="${ORCH_DIR:-${PROJECT_ROOT:-.}/.orchestration}"
+DECOMP_DIR="${DECOMP_DIR:-$ORCH_DIR/decomposed}"
+TASK_DB="${TASK_DB:-$ORCH_DIR/task-db.jsonl}"
 
-mkdir -p "$DECOMP_DIR"
+append_json_array_item() {
+    python3 - "$1" "$2" <<'PYEOF'
+import json
+import sys
+
+items = json.loads(sys.argv[1])
+items.append(sys.argv[2])
+print(json.dumps(items))
+PYEOF
+}
+
+parse_intent_fields() {
+    python3 - "$1" <<'PYEOF'
+import json
+import sys
+
+payload = json.loads(sys.argv[1])
+for key in ("intent_type", "scope", "complexity_estimate", "original_input"):
+    print(payload[key])
+PYEOF
+}
 
 # Complexity thresholds (in estimated tokens)
-readonly COMPLEXITY_LOW=500
-readonly COMPLEXITY_MEDIUM=2000
-readonly COMPLEXITY_HIGH=8000
-readonly COMPLEXITY_EXTREME=30000
+[[ -z "${COMPLEXITY_LOW+_}" ]] && readonly COMPLEXITY_LOW=500
+[[ -z "${COMPLEXITY_MEDIUM+_}" ]] && readonly COMPLEXITY_MEDIUM=2000
+[[ -z "${COMPLEXITY_HIGH+_}" ]] && readonly COMPLEXITY_HIGH=8000
+[[ -z "${COMPLEXITY_EXTREME+_}" ]] && readonly COMPLEXITY_EXTREME=30000
 
 # Decomposition strategies
-readonly STRAT_SEQUENTIAL="sequential"
-readonly STRAT_PARALLEL="parallel"
-readonly STRAT_PIPELINE="pipeline"
+[[ -z "${STRAT_SEQUENTIAL+_}" ]] && readonly STRAT_SEQUENTIAL="sequential"
+[[ -z "${STRAT_PARALLEL+_}" ]] && readonly STRAT_PARALLEL="parallel"
+[[ -z "${STRAT_PIPELINE+_}" ]] && readonly STRAT_PIPELINE="pipeline"
 
 # Estimate complexity from task description
 estimate_complexity() {
@@ -38,12 +58,14 @@ estimate_complexity() {
     # Keywords that increase complexity
     local keywords="refactor|architecture|security|authentication|payment|database|migration|multi-agent|concurrent"
     local kw_count
-    kw_count=$(echo "$task" | grep -cE "$keywords" 2>/dev/null || echo "0")
+    kw_count=$(printf '%s' "$task" | grep -cE "$keywords" 2>/dev/null || true)
+    kw_count=$(printf '%s' "$kw_count" | tail -n 1 | tr -d '[:space:]')
     estimated=$((estimated + kw_count * 1000))
 
     # File mentions
     local file_count
-    file_count=$(echo "$task" | grep -cE "<<<FILE:|\.sh|\.md|\.json" 2>/dev/null || echo "0")
+    file_count=$(printf '%s' "$task" | grep -cE "<<<FILE:|\.sh|\.md|\.json" 2>/dev/null || true)
+    file_count=$(printf '%s' "$file_count" | tail -n 1 | tr -d '[:space:]')
     estimated=$((estimated + file_count * 300))
 
     echo "$estimated"
@@ -54,6 +76,7 @@ decompose_task() {
     local task_id="$1"
     local task_desc="$2"
     local complexity="${3:-500}"
+    local parent_agent="${4:-}"
 
     local output_dir="$DECOMP_DIR/$task_id"
     mkdir -p "$output_dir"
@@ -97,6 +120,7 @@ id: ${task_id}-unit-${unit_num}
 parent: $task_id
 unit: $unit_num
 strategy: $strategy
+agent: ${parent_agent:-gemini}
 priority: normal
 estimated_duration: 15
 ---
@@ -105,7 +129,7 @@ estimated_duration: 15
 
 $unit_content
 EOF
-            units=$(echo "$units" | jq ". + [\"$unit_num\"]" 2>/dev/null || echo "$units")
+            units=$(append_json_array_item "$units" "$unit_num")
             ((unit_num++)) || true
             unit_content=""
             unit_lines=0
@@ -121,6 +145,7 @@ id: ${task_id}-unit-${unit_num}
 parent: $task_id
 unit: $unit_num
 strategy: $strategy
+agent: ${parent_agent:-gemini}
 priority: normal
 estimated_duration: 15
 ---
@@ -129,7 +154,7 @@ estimated_duration: 15
 
 $unit_content
 EOF
-        units=$(echo "$units" | jq ". + [\"unit-$(printf '%02d' "$unit_num")\"]" 2>/dev/null || echo "$units")
+        units=$(append_json_array_item "$units" "$unit_num")
     fi
 
     # Generate dependency graph
@@ -264,14 +289,19 @@ generate_spec() {
     local intent_json="$1"
     local output_file="${2:-}"
 
-    local intent_type
-    intent_type=$(echo "$intent_json" | jq -r '.intent_type')
-    local scope
-    scope=$(echo "$intent_json" | jq -r '.scope')
-    local complexity
-    complexity=$(echo "$intent_json" | jq -r '.complexity_estimate')
-    local original
-    original=$(echo "$intent_json" | jq -r '.original_input')
+    local intent_type scope complexity original
+    while IFS= read -r _field; do
+        case ${_intent_field_index:-0} in
+            0) intent_type="$_field" ;;
+            1) scope="$_field" ;;
+            2) complexity="$_field" ;;
+            3) original="$_field" ;;
+        esac
+        _intent_field_index=$(( ${_intent_field_index:-0} + 1 ))
+    done <<EOF
+$(parse_intent_fields "$intent_json")
+EOF
+    unset _intent_field_index
 
     local task_id="task-$(date +%Y%m%d%H%M%S)"
     local priority="normal"

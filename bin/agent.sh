@@ -24,10 +24,28 @@
 
 set -euo pipefail
 
-AGENT="${1:?Usage: agent.sh <agent> <task_id> <prompt> [max_retries]}"
+AGENT="${1:?Usage: agent.sh <agent> <task_id> <prompt> [timeout_secs=60] [max_retries=2]}"
 TASK_ID="${2:?task_id required}"
 PROMPT="${3:?prompt required}"
-MAX_RETRIES="${4:-2}"
+TIMEOUT_SECS="${4:-60}"
+MAX_RETRIES="${5:-2}"
+# Safety: max partial output file size (default 5MB)
+MAX_PARTIAL_BYTES="${MAX_PARTIAL_BYTES:-5242880}"
+
+# Validate numeric args — prevents timeout being misread as retries
+if ! [[ "$TIMEOUT_SECS" =~ ^[0-9]+$ ]]; then
+  echo "[orch] WARN: invalid timeout_secs '$TIMEOUT_SECS', defaulting to 60" >&2
+  TIMEOUT_SECS=60
+fi
+if ! [[ "$MAX_RETRIES" =~ ^[0-9]+$ ]]; then
+  echo "[orch] WARN: invalid max_retries '$MAX_RETRIES', defaulting to 2" >&2
+  MAX_RETRIES=2
+fi
+# Hard cap retries to prevent runaway loops (was the root cause of 152G file)
+if [ "$MAX_RETRIES" -gt 8 ]; then
+  echo "[orch] WARN: max_retries clamped from $MAX_RETRIES to 8" >&2
+  MAX_RETRIES=8
+fi
 
 if ! [[ "$TASK_ID" =~ ^[A-Za-z0-9._-]+$ ]]; then
   echo "[orch] invalid task_id: '$TASK_ID' (allowed: [A-Za-z0-9._-])" >&2
@@ -75,7 +93,13 @@ save_partial_output() {
   exit 130
 }
 
+cleanup_partial() {
+  if [ -n "${PARTIAL_OUTPUT_FILE:-}" ] && [ -f "$PARTIAL_OUTPUT_FILE" ]; then
+    rm -f "$PARTIAL_OUTPUT_FILE"
+  fi
+}
 trap 'save_partial_output' TERM
+trap 'cleanup_partial' EXIT
 
 # ── context pipe ──────────────────────────────────────────────────────────────
 if [ -n "${CONTEXT_FILE:-}" ]; then
@@ -112,7 +136,7 @@ print(json.dumps({
 PYEOF
 } >> "$LOG_FILE"
 
-export _TASK_ID="$TASK_ID" _AGENT="$AGENT" _PROMPT_CHARS="${#PROMPT}" _PROMPT="$PROMPT" _PROJECT_ROOT="$PROJECT_ROOT"
+export _TASK_ID="$TASK_ID" _AGENT="$AGENT" _PROMPT_CHARS="${#PROMPT}" _PROMPT="$PROMPT" _PROJECT_ROOT="$PROJECT_ROOT" _TIMEOUT_SECS="$TIMEOUT_SECS"
 
 # ── CLI runners ───────────────────────────────────────────────────────────────
 
@@ -146,13 +170,14 @@ with open(os.path.expanduser("~/.claude/settings.json")) as f:
     token = json.load(f)["env"]["ANTHROPIC_AUTH_TOKEN"]
 with open(prompt_file) as f:
     prompt = f.read()
+timeout_s = int(os.environ.get("_TIMEOUT_SECS", "60") or "60")
 result = subprocess.run([
     "curl", "-s", "-X", "POST", "http://localhost:20128/v1/messages",
     "-H", "Content-Type: application/json",
     "-H", "anthropic-version: 2023-06-01",
     "-H", f"x-api-key: {token}",
     "-d", json.dumps({"model": model, "messages": [{"role": "user", "content": prompt}], "max_tokens": 4096, "stream": False})
-], capture_output=True, text=True, timeout=60)
+], capture_output=True, text=True, timeout=timeout_s)
 try:
     data = json.loads(result.stdout)
     for block in data.get("content", []):
@@ -188,8 +213,27 @@ run_copilot() {
   return $exit_code
 }
 
+# Claude Code CLI runner — tool-enabled local execution
+# Uses claude -p with --allowedTools so agents can Read/Write/Bash/Grep/Glob
+# Model aliases (oc-medium, oc-high, etc.) resolved by ~/.claude/settings.json models config
+run_claude_code() {
+  local model="$1"
+  local prompt_file
+  prompt_file=$(mktemp "/tmp/orch-claude-$$.XXXXXX")
+  printf '%s' "$PROMPT" > "$prompt_file"
+
+  claude -p \
+    --model "$model" \
+    --allowedTools "Read,Write,Bash,Grep,Glob" \
+    < "$prompt_file" 2>&1
+  local exit_code=$?
+  rm -f "$prompt_file"
+  return $exit_code
+}
+
 run_agent() {
   local start output exit_code duration
+  local partial_size=0
   start=$(date +%s)
   PARTIAL_OUTPUT_FILE="$LOG_DIR/.${TASK_ID}.partial.$$"
   : > "$PARTIAL_OUTPUT_FILE"
@@ -215,18 +259,31 @@ run_agent() {
     minimax-code|minimax|minimax_flash)
       run_router "minimax-code" > "$PARTIAL_OUTPUT_FILE" 2>&1
       ;;
-    cc/*|gempro|gemmed|gemlow)
+    oc-high|oc-medium|oc-low|claude-review|claude-review-backup|claude-architect|claude-architect-backup)
+      run_claude_code "$AGENT" > "$PARTIAL_OUTPUT_FILE" 2>&1
+      ;;
+    cc/*)
       run_router "$AGENT" > "$PARTIAL_OUTPUT_FILE" 2>&1
       ;;
     *)
-      echo "[orch] ERROR: unknown agent '$AGENT'" >&2
-      echo "[orch] Known: gemini-deep, gemini-fast, gemini, copilot, gh-code, gh-thin, minimax-code, cc/*, gempro, gemmed, gemlow" >&2
-      return 1
+      echo "[orch] ERROR: unknown agent '$AGENT'" > "$PARTIAL_OUTPUT_FILE"
+      echo "[orch] Known: gemini-deep, gemini-fast, gemini, copilot, gh-code, gh-thin, minimax-code, cc/*, oc-high, oc-medium, oc-low, claude-review, claude-architect" >> "$PARTIAL_OUTPUT_FILE"
+      exit_code=1
       ;;
   esac
 
-  exit_code=$?
-  output=$(cat "$PARTIAL_OUTPUT_FILE")
+  # If case branch actually executed a command, capture its exit code
+  if [ -z "${exit_code+x}" ]; then
+    exit_code=$?
+  fi
+
+  partial_size=$(wc -c < "$PARTIAL_OUTPUT_FILE" | tr -d ' ')
+  if [ "$partial_size" -gt "$MAX_PARTIAL_BYTES" ]; then
+    output="$(head -c "$MAX_PARTIAL_BYTES" "$PARTIAL_OUTPUT_FILE")\n\n[orch] NOTE: output truncated from ${partial_size} bytes to ${MAX_PARTIAL_BYTES} bytes"
+  else
+    output=$(cat "$PARTIAL_OUTPUT_FILE")
+  fi
+
   rm -f "$PARTIAL_OUTPUT_FILE"
   PARTIAL_OUTPUT_FILE=""
 

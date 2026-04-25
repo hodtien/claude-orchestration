@@ -421,6 +421,64 @@ function runBudgetDashboard(args) {
   }
 }
 
+// ── routing advice helper (Phase 9.2) ──────────────────────────────────────
+function runGetRoutingAdvice(taskType) {
+  const libPath = join(PROJECT_ROOT, "lib", "learning-engine.sh");
+  if (!existsSync(libPath)) {
+    return { error: "lib/learning-engine.sh not found" };
+  }
+  try {
+    const result = spawnSync(
+      "bash",
+      ["-c", `source "$0" && get_routing_advice "$1"`, libPath, taskType || ""],
+      {
+        encoding: "utf8",
+        timeout: 15000,
+        env: { ...process.env, PROJECT_ROOT },
+      }
+    );
+    const advice = (result.stdout || "").trim();
+    const match = advice.match(/:\s*(\S+)$/);
+    const recommended = match ? match[1] : "auto";
+    return { task_type: taskType, advice, recommended_agent: recommended };
+  } catch (e) {
+    return { error: String(e).slice(0, 500) };
+  }
+}
+
+// ── decompose preview helper (Phase 9.1) ────────────────────────────────────
+function runDecomposePreview(taskSpec, taskId) {
+  const helperPath = join(PROJECT_ROOT, "lib", "task-decomposer.sh");
+  if (!existsSync(helperPath)) {
+    return { error: "lib/task-decomposer.sh not found" };
+  }
+  try {
+    const result = spawnSync("bash", ["-c", `
+      source "$0"
+      export ORCH_DIR=$(mktemp -d)
+      export DECOMP_DIR="$ORCH_DIR/decomposed"
+      complexity=$(estimate_complexity "$1" "")
+      output_dir=$(decompose_task "$2" "$1" "$complexity")
+      if [ -f "$output_dir/meta.json" ]; then
+        cat "$output_dir/meta.json"
+      else
+        echo '{"error":"decomposition produced no output"}'
+      fi
+      rm -rf "$ORCH_DIR"
+    `, helperPath, taskSpec, taskId], {
+      encoding: "utf8",
+      timeout: 15000,
+      env: { ...process.env, PROJECT_ROOT },
+    });
+    if (result.status === 0 && result.stdout) {
+      return JSON.parse(result.stdout);
+    }
+    return { error: (result.stderr || "decompose failed").slice(0, 500) };
+  } catch (e) {
+    return { error: String(e).slice(0, 500) };
+  }
+}
+
 // ── MCP server setup ─────────────────────────────────────────────────────────
 const server = new Server(
   { name: "orch-notify", version: "1.0.0" },
@@ -520,6 +578,31 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: [],
       },
     },
+    {
+      name: "decompose_preview",
+      description:
+        "Preview how a task spec would be auto-decomposed into 15-min units. Returns unit count, strategy, and unit summaries without dispatching. Use to validate decomposition before running a batch.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          task_spec: { type: "string", description: "Full task spec content (frontmatter + body)" },
+          task_id: { type: "string", description: "Task ID for the preview (default: 'preview')" },
+        },
+        required: ["task_spec"],
+      },
+    },
+    {
+      name: "get_routing_advice",
+      description:
+        "Get agent routing advice for a task type based on historical learning data. Returns recommended agent and cost-efficiency reasoning from the learning engine.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          task_type: { type: "string", description: "Task type to get routing advice for (e.g. 'implement_feature', 'code_review')" },
+        },
+        required: ["task_type"],
+      },
+    },
   ],
 }));
 
@@ -561,6 +644,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
     case "get_token_budget":
       result = runBudgetDashboard(args);
+      break;
+    case "decompose_preview":
+      result = runDecomposePreview(args?.task_spec || "", args?.task_id || "preview");
+      break;
+    case "get_routing_advice":
+      result = runGetRoutingAdvice(args?.task_type || "");
       break;
     default:
       return {

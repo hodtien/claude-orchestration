@@ -199,13 +199,12 @@ task_mapping:
     consensus: true
     parallel:
     - claude-review
-    - gh/gpt-5.3-codex
-    - minimax-code
-    fallback:
     - claude-review-backup
-    - cc/claude-sonnet-4-6
-    rationale: claude-review as primary reviewer; copilot for repo context; minimax-code
-      as backup. claude-review-backup failover if claude-review rate-limited.
+    fallback:
+    - oc-medium
+    - minimax-code
+    rationale: claude-review + backup as primary/secondary reviewers; oc-medium fallback;
+      minimax-code last resort.
   ui_ux_review:
     parallel:
     - claude-review
@@ -218,34 +217,30 @@ task_mapping:
     consensus: true
     parallel:
     - claude-architect
-    - cc/claude-sonnet-4-6
-    - minimax-code
     fallback:
     - claude-architect-backup
-    - cc/claude-opus-4-6
-    rationale: claude-architect for deep architecture reasoning; Claude Sonnet as
-      parallel option; minimax-code last resort. claude-architect-backup failover
-      if primary rate-limited.
+    - oc-high
+    - minimax-code
+    rationale: claude-architect + backup for deep reasoning; oc-high as lighter fallback;
+      minimax-code last resort.
   security_audit:
     consensus: true
     parallel:
-    - claude-architect
-    - cc/claude-sonnet-4-6
-    - minimax-code
+    - claude-review
+    - openclaude-gpt
     fallback:
-    - claude-architect-backup
-    - cc/claude-opus-4-6
-    rationale: claude-architect for deep security analysis; Claude Sonnet as parallel
-      option; minimax-code last resort. claude-architect-backup failover if primary
-      rate-limited.
+    - oc-medium
+    - minimax-code
+    rationale: claude-review + openclaude-gpt for security analysis; oc-medium as fallback;
+      minimax-code last resort.
   analyze_requirements:
     parallel:
     - oc-high
     - minimax-code
     fallback:
-    - claude-architect
     - cc/claude-sonnet-4-6
     - cc/claude-opus-4-6
+    - claude-architect
     rationale: oc-high for requirements analysis (lighter than claude-architect);
       claude-architect as premium fallback; minimax-code last resort.
   create_user_stories:
@@ -253,8 +248,8 @@ task_mapping:
     - oc-high
     - minimax-code
     fallback:
-    - claude-architect
     - cc/claude-sonnet-4-6
+    - claude-architect
   design_api:
     consensus: true
     parallel:
@@ -269,13 +264,10 @@ task_mapping:
   system_design:
     parallel:
     - claude-architect
-    - minimax-code
     fallback:
     - claude-architect-backup
-    - cc/claude-opus-4-6
-    - cc/claude-sonnet-4-6
-    rationale: claude-architect for whole-system design; Claude Opus as premium
-      backup; minimax-code last resort.
+    - minimax-code
+    rationale: claude-architect primary; backup fallback; minimax-code last resort.
   write_dockerfile:
     parallel:
     - oc-medium

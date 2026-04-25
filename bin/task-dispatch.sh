@@ -47,6 +47,20 @@ else
     write_task_status() { return 0; }
     build_status_json() { return 0; }
 fi
+# shellcheck source=../lib/task-decomposer.sh
+if [ -f "$SCRIPT_DIR/../lib/task-decomposer.sh" ]; then
+    . "$SCRIPT_DIR/../lib/task-decomposer.sh"
+else
+    estimate_complexity() { echo "500"; }
+    decompose_task() { return 1; }
+fi
+# shellcheck source=../lib/learning-engine.sh
+if [ -f "$SCRIPT_DIR/../lib/learning-engine.sh" ]; then
+    . "$SCRIPT_DIR/../lib/learning-engine.sh"
+else
+    learn_from_outcome() { return 0; }
+    analyze_batch() { return 0; }
+fi
 BATCH_DIR="${1:?Usage: task-dispatch.sh <batch-dir> [--parallel|--status]}"
 MODE="${2:---sequential}"
 # Always retry skipped/failed tasks — no flag needed
@@ -77,6 +91,7 @@ mkdir -p "$RESULTS_DIR" "$INBOX_DIR" "$PIDS_DIR" "$TASKS_DIR"
 
 BATCH_ID="$(basename "$BATCH_DIR")"
 BATCH_CONF="$BATCH_DIR/batch.conf"
+AUTO_DECOMPOSE="${AUTO_DECOMPOSE:-false}"
 
 SHUTDOWN_IN_PROGRESS=false
 
@@ -304,7 +319,7 @@ import re
 import sys
 
 _, conf_path = sys.argv
-allowed = {"failure_mode", "max_failures", "notify_on_failure"}
+allowed = {"failure_mode", "max_failures", "notify_on_failure", "auto_decompose", "budget_tokens"}
 parsed = {}
 
 with open(conf_path, "r", encoding="utf-8", errors="replace") as f:
@@ -323,7 +338,7 @@ with open(conf_path, "r", encoding="utf-8", errors="replace") as f:
             value = value[1:-1].strip()
         parsed[key] = value
 
-for key in ("failure_mode", "max_failures", "notify_on_failure", "budget_tokens"):
+for key in ("failure_mode", "max_failures", "notify_on_failure", "budget_tokens", "auto_decompose"):
     if key in parsed:
         print(f"{key}={parsed[key]}")
 PYEOF
@@ -337,6 +352,7 @@ PYEOF
       max_failures) MAX_FAILURES="$value" ;;
       notify_on_failure) NOTIFY_ON_FAILURE="$value" ;;
       budget_tokens) BUDGET_TOKENS="$value" ;;
+      auto_decompose) AUTO_DECOMPOSE="$value" ;;
     esac
   done <<EOF
 $parsed_lines
@@ -424,16 +440,72 @@ show_status() {
     tid=$(parse_front "$spec" "id" "unknown")
     local agent
     agent=$(parse_front "$spec" "agent" "?")
-    if [ -f "$RESULTS_DIR/${tid}.out" ]; then
+
+    local status_file="$RESULTS_DIR/${tid}.status.json"
+    if [ -f "$status_file" ]; then
+      local status_line final_state output_bytes winner_agent
+      status_line=$(python3 - "$status_file" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+try:
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    final_state = str(data.get("final_state", "")).strip()
+    output_bytes = int(data.get("output_bytes", 0) or 0)
+    winner_agent = data.get("winner_agent")
+    if winner_agent is None:
+        winner_agent = ""
+    print(f"{final_state}\t{output_bytes}\t{winner_agent}")
+except Exception:
+    print("\t0\t")
+PYEOF
+)
+      final_state=${status_line%%$'\t'*}
+      local rest="${status_line#*$'\t'}"
+      output_bytes=${rest%%$'\t'*}
+      winner_agent=${rest#*$'\t'}
+      [ -n "$output_bytes" ] || output_bytes=0
+
+      case "$final_state" in
+        done)
+          if [ -n "$winner_agent" ]; then
+            echo "  ✅ $tid ($agent) — ${output_bytes} bytes [state=done winner=$winner_agent]"
+          else
+            echo "  ✅ $tid ($agent) — ${output_bytes} bytes [state=done]"
+          fi
+          done_count=$((done_count + 1))
+          ;;
+        needs_revision)
+          echo "  🔄 $tid ($agent) — ${output_bytes} bytes [state=needs_revision]"
+          pending=$((pending + 1))
+          ;;
+        failed|exhausted|cancelled)
+          echo "  ❌ $tid ($agent) — ${output_bytes} bytes [state=$final_state]"
+          failed=$((failed + 1))
+          ;;
+        "")
+          # malformed status file; fallback below
+          ;;
+        *)
+          echo "  ⏳ $tid ($agent) — ${output_bytes} bytes [state=$final_state]"
+          pending=$((pending + 1))
+          ;;
+      esac
+
+      if [ -n "$final_state" ]; then
+        continue
+      fi
+    fi
+
+    # Legacy fallback when status.json is missing or malformed
+    if [ -f "$RESULTS_DIR/${tid}.failed" ] || [ -f "$RESULTS_DIR/${tid}.exhausted" ] || [ -f "$RESULTS_DIR/${tid}.cancelled" ]; then
+      echo "  ❌ $tid ($agent) — state marker present (legacy)"
+      failed=$((failed + 1))
+    elif [ -f "$RESULTS_DIR/${tid}.out" ] && [ -s "$RESULTS_DIR/${tid}.out" ]; then
       local size
       size=$(wc -c < "$RESULTS_DIR/${tid}.out" | tr -d ' ')
-      if [ "$size" -gt 50 ]; then
-        echo "  ✅ $tid ($agent) — ${size} bytes"
-        done_count=$((done_count + 1))
-      else
-        echo "  ❌ $tid ($agent) — ${size} bytes (likely failed)"
-        failed=$((failed + 1))
-      fi
+      echo "  ✅ $tid ($agent) — ${size} bytes (legacy)"
+      done_count=$((done_count + 1))
     else
       echo "  ⏳ $tid ($agent) — pending"
       pending=$((pending + 1))
@@ -761,25 +833,24 @@ run_reviewer() {
   local original_task
   original_task=$(parse_body "$spec")
 
-  # Build review+apply prompt for copilot
+  # Build review prompt — evaluate completed output only, no repo reads
   local review_prompt
-  review_prompt="You are a senior code reviewer applying and reviewing AI-generated code.
+  review_prompt="You are a senior code reviewer evaluating the output of a completed agent task.
 
 ORIGINAL TASK:
 ${original_task}
 
-GENERATED IMPLEMENTATION:
+AGENT OUTPUT:
 $(cat "$main_out")
 
-Your job:
-1. Apply ALL code changes shown above to the relevant files in this project directory.
-   Use --allow-all. Write the files exactly as specified.
-2. If the implementation references a file path — write to that path.
-   If no path is specified — infer the correct file from context.
-3. After applying, review for: correctness, edge cases, code style, security.
-4. Report back: which files were changed, what was applied, any issues or improvements made.
+Review the output above for:
+1. Correctness — does it fully satisfy the task requirements?
+2. Edge cases — any missing error handling or boundary conditions?
+3. Code style — clean, readable, consistent?
+4. Security — any obvious vulnerabilities?
 
-Apply the changes now."
+Do NOT read or modify any files in the repository. Base your review solely on the agent output above.
+Report: overall verdict (PASS / WARN / FAIL), severity of any issues found, and concrete suggestions."
 
   echo "[dispatch] running reviewer $reviewer for $tid"
   if "$SCRIPT_DIR/agent.sh" "$reviewer" "${tid}-review" "$review_prompt" "$reviewer_timeout" "1" \
@@ -1328,6 +1399,58 @@ dispatch_task() {
  local task_type pick_strategy
 
  task_type=$(parse_front "$spec" "task_type" "")
+
+ if [[ "$AUTO_DECOMPOSE" == "true" ]]; then
+   local spec_body spec_lines complexity_est tid_decomp decomp_dir unit_count unit_spec
+   local decomp_agent_chain spec_agents spec_agent
+   if [ -n "$agent_override" ]; then
+     decomp_agent_chain="$agent_override"
+   else
+     spec_agents=$(parse_list "$spec" "agents")
+     if [ -n "$spec_agents" ]; then
+       decomp_agent_chain="$spec_agents"
+     else
+       spec_agent=$(parse_front "$spec" "agent" "")
+       decomp_agent_chain="$spec_agent"
+     fi
+   fi
+   spec_body=$(python3 - "$spec" <<'PYEOF'
+import sys
+from pathlib import Path
+
+text = Path(sys.argv[1]).read_text(encoding='utf-8', errors='replace')
+if text.startswith('---\n'):
+    parts = text.split('\n---\n', 1)
+    if len(parts) == 2:
+        print(parts[1], end='')
+    else:
+        print(text, end='')
+else:
+    print(text, end='')
+PYEOF
+)
+   spec_lines=$(printf '%s' "$spec_body" | wc -l | tr -d ' ')
+   complexity_est=$(estimate_complexity "$spec_body" "$spec")
+   if [[ "$spec_lines" -gt 80 ]] || [[ "$complexity_est" -gt 2000 ]]; then
+     tid_decomp=$(parse_front "$spec" "id" "unknown")
+     echo "[dispatch] auto-decompose $tid_decomp (${spec_lines} lines, complexity ${complexity_est})"
+     local _decomp_first_agent
+     _decomp_first_agent=$(printf '%s' "$decomp_agent_chain" | awk '{print $1}')
+     decomp_dir=$(decompose_task "$tid_decomp" "$spec_body" "$complexity_est" "$_decomp_first_agent" 2>/dev/null || true)
+     if [[ -d "$decomp_dir" ]] && [[ -f "$decomp_dir/meta.json" ]]; then
+       unit_count=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['unit_count'])" "$decomp_dir/meta.json" 2>/dev/null || echo "0")
+       if [[ "$unit_count" -gt 1 ]]; then
+         echo "[dispatch] decomposed into $unit_count units → $decomp_dir (agents: $decomp_agent_chain)"
+         for unit_spec in "$decomp_dir"/unit-*.md; do
+           [ -f "$unit_spec" ] || continue
+           dispatch_task_first_success "$unit_spec" "$decomp_agent_chain" || return $?
+         done
+         return 0
+       fi
+     fi
+   fi
+ fi
+
  pick_strategy=$(get_pick_strategy)
 
  if [[ "$pick_strategy" == "consensus" ]] && [[ -n "$task_type" ]] && is_consensus_type "$task_type"; then
@@ -1726,9 +1849,14 @@ PYEOF
           2>/dev/null || true
       fi
 
-      # Phase 8.1: write status JSON — first_success done
-      _write_status_first_success "$tid" "$task_type" "first_success" "done" \
+      # Phase 8.1: write status JSON — reflects quality gate result
+      local _fs_final_state="done"
+      [ "$task_status" = "needs_revision" ] && _fs_final_state="needs_revision"
+      _write_status_first_success "$tid" "$task_type" "first_success" "$_fs_final_state" \
         "$_fs_start_epoch" "$agent" "$agent" "$agent" "0.0" "0" "" || true
+
+      learn_from_outcome "$BATCH_ID" "true" "$agent" "${task_type:-unknown}" \
+        "$actual_duration" "0" "" 2>/dev/null || true
 
       return 0
     fi
@@ -1804,6 +1932,9 @@ EOF
   _fs_cand_csv=$(echo "$agent_candidates" | tr ' ' ',')
   _write_status_first_success "$tid" "$task_type" "failed" "failed" \
     "$_fs_start_epoch" "" "$_fs_cand_csv" "" "0.0" "0" "" || true
+
+  learn_from_outcome "$BATCH_ID" "false" "$agent" "${task_type:-unknown}" \
+    "$actual_duration" "0" "exhausted" 2>/dev/null || true
 
   return 1
 }
@@ -2179,6 +2310,7 @@ notify_event "batch_complete" "$_bc_payload"
 if [ "${partial_success:-false}" = "true" ] && [ "${NOTIFY_ON_FAILURE:-false}" = "true" ]; then
   notify_event "batch_partial_failure" "$_bc_payload"
 fi
+analyze_batch "$BATCH_ID" >/dev/null 2>&1 || true
 
 if [ "$batch_abort" = "true" ]; then
   exit 1

@@ -69,8 +69,8 @@ Phase 7 order: **7.2 first → 7.1 second** (eval-harness needed to measure cons
 
 Full analysis: `docs/PLAN_phase9.md`. Dispatch order: 9.1+9.4 parallel → 9.2 → 9.3.
 
-- [ ] `9.1` Task auto-decomposition (P1) — wire `lib/task-decomposer.sh` into dispatch pre-phase; MCP `decompose_preview`; 15+ tests
-- [ ] `9.2` Learning loop (P1) — wire `lib/learning-engine.sh` after every dispatch completion; `orch-dashboard.sh learn`; MCP `get_routing_advice`; 15+ tests
+- [x] `9.1` Task auto-decomposition (P1) ✅ DONE 2026-04-25 — `lib/task-decomposer.sh` bug fixes, dispatch wire, MCP `decompose_preview`, 17/17 tests PASS
+- [x] `9.2` Learning loop (P1) ✅ DONE 2026-04-26 — `lib/learning-engine.sh` 4 bugs fixed, wired into dispatch, MCP `get_routing_advice`, `orch-dashboard.sh learn`, 30/30 tests PASS
 - [ ] `9.3` Adaptive dispatch / ReAct (P2) — new `lib/react-loop.sh`; observe/think/act on uncertain tasks; MCP `get_react_trace`; 10+ tests
 - [ ] `9.4` Session context chains (P2) — new `lib/session-context.sh`; compressed session brief across `depends_on` pipeline; 10+ tests
 
@@ -112,6 +112,8 @@ Target: +60 tests (136 → 196+). Self-referential: orchestration builds itself.
 
 | Date | What | Where |
 |------|------|-------|
+| 2026-04-26 | **Phase 9.2 DONE** u2014 learning loop wired: `lib/learning-engine.sh` (4 bugs fixed, no jq/bc/mkdir at load), `learn_from_outcome` + `analyze_batch` wired into dispatch, `get_routing_advice` MCP tool, `bin/_dashboard/learn.sh`, `bin/test-learning-engine.sh` (30/30 PASS). Phase 9.2 COMPLETE. | lib/learning-engine.sh, bin/task-dispatch.sh, mcp-server/server.mjs, bin/_dashboard/learn.sh, bin/test-learning-engine.sh |
+| 2026-04-25 | **Phase 9.1 DONE** u2014 task auto-decomposition wired: `lib/task-decomposer.sh` (3 bugs fixed), `auto_decompose` flag + pre-dispatch hook in dispatch, `decompose_preview` MCP tool, `bin/test-task-decomposer.sh` (17/17 PASS), 5 fixtures in `test-fixtures/decomposer/`. | lib/task-decomposer.sh, bin/task-dispatch.sh, mcp-server/server.mjs, bin/test-task-decomposer.sh, test-fixtures/decomposer/* |
 | 2026-04-25 | **Phase 8.4 DONE** — token budget dashboard + MCP tool: `bin/_dashboard/budget.sh` (250 lines, python3 in-process), `config/budget.yaml`, `get_token_budget` MCP tool in server.mjs, 45/45 tests PASS. Phase 8 COMPLETE. | bin/_dashboard/budget.sh, config/budget.yaml, mcp-server/server.mjs, bin/test-budget-dashboard.sh, test-fixtures/budget/* |
 | 2026-04-24 | **Phase 8.3 DONE** — orch-notify trace viewer: 3 new MCP tools (get_task_trace, get_trace_waterfall, recent_failures), lib/trace-query.sh (python3 in-process, 3 ops), test-fixtures/trace/ (7 files), bin/test-trace-query.sh (36 tests PASS), server.mjs updated. Thin delegation pattern, no new deps, no regression. | lib/trace-query.sh, bin/test-trace-query.sh, mcp-server/server.mjs, test-fixtures/trace/*, docs/PROMPT_phase8.3.md |
 | 2026-04-24 | **Phase 8.2 DONE** — orch-metrics.sh rollup subcommand: .status.json aggregation by task_type × strategy_used, consensus score distribution, reflexion histogram. 27 tests PASS, 0.046s runtime, no regression in event-log mode. Spec archived. | bin/orch-metrics.sh, bin/test-orch-metrics-rollup.sh, test-fixtures/metrics/*, docs/archive/PROMPT_phase8.2_2026-04-24.md |

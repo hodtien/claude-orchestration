@@ -1,260 +1,297 @@
 #!/usr/bin/env bash
-# learning-engine.sh — Autonomous Learning Loop
+# learning-engine.sh u2014 Autonomous Learning Loop
 # Analyze batch outcomes, extract patterns, update routing and agent configs.
 
 # NOTE: Do NOT use set -e in this file. This lib is SOURCEd by callers that manage their own error handling.
+# NOTE: No mkdir at load time u2014 dirs are created lazily by _ensure_learn_dirs.
+# NOTE: No jq dependency u2014 all JSON via python3 stdlib.
+# NOTE: No bc dependency u2014 all arithmetic via python3.
 
-ORCH_DIR="${ORCH_DIR:-$HOME/.claude/orchestration}"
-LEARN_DIR="$ORCH_DIR/learnings"
-CONFIG_DIR="$ORCH_DIR/config"
+# Guard against double-sourcing
+[ -n "${_LEARNING_ENGINE_LOADED:-}" ] && return 0
+_LEARNING_ENGINE_LOADED=1
 
-mkdir -p "$LEARN_DIR" "$CONFIG_DIR"
+# Default ORCH_DIR to the project .orchestration, not $HOME
+# Callers may override via env before sourcing.
+_LE_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)"
+ORCH_DIR="${ORCH_DIR:-$_LE_SCRIPT_DIR/../.orchestration}"
+LEARN_DIR="${LEARN_DIR:-$ORCH_DIR/learnings}"
+CONFIG_DIR="${CONFIG_DIR:-$ORCH_DIR/config}"
+
+# Learning storage paths (overridable for test isolation)
+LEARN_DB="${LEARN_DB:-$LEARN_DIR/learnings.jsonl}"
+ROUTING_RULES="${ROUTING_RULES:-$LEARN_DIR/routing-rules.json}"
 
 # Learning categories
-readonly CAT_SUCCESS="success_patterns"
-readonly CAT_FAILURE="failure_patterns"
-readonly CAT_ROUTING="routing_adjustments"
-readonly CAT_COST="cost_optimizations"
+CAT_SUCCESS="success_patterns"
+CAT_FAILURE="failure_patterns"
 
-# Learning storage
-LEARN_DB="$LEARN_DIR/learnings.jsonl"
-ROUTING_RULES="$LEARN_DIR/routing-rules.json"
-
-# Initialize routing rules if not exists
-init_routing_rules() {
-    if [[ ! -f "$ROUTING_RULES" ]]; then
-        cat > "$ROUTING_RULES" <<'EOF'
-{
-  "rules": [],
-  "last_updated": "none",
-  "version": 1
+# Lazy dir creation u2014 only when we actually write
+_ensure_learn_dirs() {
+    mkdir -p "$LEARN_DIR" "$CONFIG_DIR"
 }
-EOF
+
+# Initialize routing rules file if missing
+init_routing_rules() {
+    _ensure_learn_dirs
+    if [ ! -f "$ROUTING_RULES" ]; then
+        python3 -c "
+import json, sys
+data = {'rules': [], 'last_updated': 'none', 'version': 1}
+print(json.dumps(data, indent=2))
+" > "$ROUTING_RULES"
     fi
 }
 
 # Record a learning from batch outcome
+# Args: batch_id success agent task_type duration tokens notes
 learn_from_outcome() {
-    local batch_id="$1"
-    local success="$2"
-    local agent="$3"
-    local task_type="$4"
-    local duration="$5"
-    local tokens="$6"
+    local batch_id="${1:-}"
+    local success="${2:-false}"
+    local agent="${3:-}"
+    local task_type="${4:-}"
+    local duration="${5:-0}"
+    local tokens="${6:-0}"
     local notes="${7:-}"
 
     local category="$CAT_SUCCESS"
-    if [[ "$success" != "true" ]]; then
-        category="$CAT_FAILURE"
-    fi
+    [ "$success" != "true" ] && category="$CAT_FAILURE"
 
-    local learning=$(cat <<EOF
-{
-  "batch_id": "$batch_id",
-  "agent": "$agent",
-  "task_type": "$task_type",
-  "success": $success,
-  "duration": $duration,
-  "tokens": $tokens,
-  "category": "$category",
-  "notes": "$notes",
-  "learned_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    _ensure_learn_dirs
+
+    python3 - "$batch_id" "$success" "$agent" "$task_type" \
+        "$duration" "$tokens" "$category" "$notes" "$LEARN_DB" <<'PYEOF'
+import json, sys, datetime
+_, batch_id, success_str, agent, task_type, duration, tokens, category, notes, learn_db = sys.argv
+success_val = success_str.lower() == "true"
+record = {
+    "batch_id": batch_id,
+    "agent": agent,
+    "task_type": task_type,
+    "success": success_val,
+    "duration": int(duration) if duration.isdigit() else 0,
+    "tokens": int(tokens) if tokens.isdigit() else 0,
+    "category": category,
+    "notes": notes,
+    "learned_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
 }
-EOF
-)
+with open(learn_db, "a") as f:
+    f.write(json.dumps(record) + "\n")
+print(f"Learning recorded: {category} for {task_type}")
+PYEOF
 
-    echo "$learning" >> "$LEARN_DB"
-    echo "Learning recorded: $category for $task_type"
-
-    # Update routing rules if this was a successful pattern
-    if [[ "$success" == "true" ]]; then
-        update_routing_for_success "$agent" "$task_type" "$tokens" "$duration"
+    # Update routing rules on success
+    if [ "$success" = "true" ]; then
+        update_routing_for_success "$task_type" "$agent" "$tokens" "$duration"
     fi
 }
 
-# Update routing rules based on successful outcomes
+# Update routing rules based on a successful outcome
+# Args: task_type agent tokens duration
 update_routing_for_success() {
-    local agent="$1"
-    local task_type="$2"
-    local tokens="$3"
-    local duration="$4"
+    local task_type="${1:-}"
+    local agent="${2:-}"
+    local tokens="${3:-0}"
+    local duration="${4:-0}"
 
     init_routing_rules
 
-    local cost_per_min
-    cost_per_min=$(echo "scale=2; $tokens / ($duration / 60 + 0.1)" | bc 2>/dev/null || echo "0")
+    python3 - "$task_type" "$agent" "$tokens" "$duration" \
+        "$ROUTING_RULES" <<'PYEOF'
+import json, sys, datetime
 
-    # Check if rule for this task_type already exists
-    local existing
-    existing=$(jq --arg tt "$task_type" '.rules[] | select(.task_type == $tt)' "$ROUTING_RULES" 2>/dev/null)
+_, task_type, agent, tokens_str, duration_str, routing_rules_path = sys.argv
+tokens = int(tokens_str) if tokens_str.isdigit() else 0
+duration = int(duration_str) if duration_str.isdigit() else 0
 
-    if [[ -n "$existing" ]] && [[ "$existing" != "null" ]]; then
-        # Update existing rule
-        local best_agent
-        best_agent=$(jq --arg tt "$task_type" --arg ag "$agent" \
-            '.rules[] | select(.task_type == $tt) | .best_agent' "$ROUTING_RULES" 2>/dev/null)
+# cost_per_min: tokens per effective minute (avoid div/0)
+effective_minutes = duration / 60.0 + 0.1
+cost_per_min = round(tokens / effective_minutes, 2)
 
-        # If this agent is better, update
-        local current_cpm
-        current_cpm=$(jq --arg tt "$task_type" \
-            '.rules[] | select(.task_type == $tt) | .cost_per_min' "$ROUTING_RULES" 2>/dev/null)
+with open(routing_rules_path, "r") as f:
+    data = json.load(f)
 
-        local success_count
-        success_count=$(jq --arg tt "$task_type" \
-            '.rules[] | select(.task_type == $tt) | .success_count' "$ROUTING_RULES" 2>/dev/null || echo "0")
+rules = data.get("rules", [])
+existing = next((r for r in rules if r.get("task_type") == task_type), None)
 
-        local better
-        better=$(echo "$cost_per_min < $current_cpm" | bc -l 2>/dev/null || echo "0")
+if existing is not None:
+    current_cpm = float(existing.get("cost_per_min", 999999))
+    if cost_per_min < current_cpm:
+        existing["best_agent"] = agent
+        existing["cost_per_min"] = cost_per_min
+        existing["success_count"] = existing.get("success_count", 0) + 1
+else:
+    rules.append({
+        "task_type": task_type,
+        "best_agent": agent,
+        "cost_per_min": cost_per_min,
+        "success_count": 1,
+    })
+    data["rules"] = rules
 
-        if [[ "$better" == "1" ]]; then
-            local new_count=$((success_count + 1))
-            jq --arg tt "$task_type" --arg ag "$agent" \
-                --argjson cpm "$cost_per_min" --argjson cnt "$new_count" \
-                '(.rules[] | select(.task_type == $tt)).best_agent = $ag |
-                 (.rules[] | select(.task_type == $tt)).cost_per_min = $cpm |
-                 (.rules[] | select(.task_type == $tt)).success_count = $cnt' \
-                "$ROUTING_RULES" > "${ROUTING_RULES}.tmp" && mv "${ROUTING_RULES}.tmp" "$ROUTING_RULES"
-        fi
-    else
-        # Add new rule
-        local new_rule=$(cat <<EOF
-{"task_type": "$task_type", "best_agent": "$agent", "cost_per_min": $cost_per_min, "success_count": 1}
-EOF
-)
-        jq --argjson rule "$new_rule" \
-            '.rules += [$rule] | .last_updated = "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"' \
-            "$ROUTING_RULES" > "${ROUTING_RULES}.tmp" && mv "${ROUTING_RULES}.tmp" "$ROUTING_RULES"
-    fi
+data["last_updated"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+tmp = routing_rules_path + ".tmp"
+with open(tmp, "w") as f:
+    json.dump(data, f, indent=2)
+import os
+os.replace(tmp, routing_rules_path)
+PYEOF
 }
 
-# Get agent recommendation for task type
+# Get agent recommendation for a task type
+# Args: task_type
 get_agent_recommendation() {
-    local task_type="$1"
+    local task_type="${1:-}"
 
     init_routing_rules
 
-    local recommendation
-    recommendation=$(jq --arg tt "$task_type" \
-        '.rules[] | select(.task_type == $tt) | .best_agent' \
-        "$ROUTING_RULES" 2>/dev/null)
+    python3 - "$task_type" "$ROUTING_RULES" <<'PYEOF'
+import json, sys
 
-    if [[ -n "$recommendation" ]] && [[ "$recommendation" != "null" ]]; then
-        echo "$recommendation"
-    else
-        # Fallback to default mapping
-        case "$task_type" in
-            security|architecture)
-                echo "gemini"
-                ;;
-            code|implementation|testing)
-                echo "copilot"
-                ;;
-            *)
-                echo "auto"
-                ;;
-        esac
-    fi
+_, task_type, routing_rules_path = sys.argv
+
+try:
+    with open(routing_rules_path, "r") as f:
+        data = json.load(f)
+    rules = data.get("rules", [])
+    match = next((r for r in rules if r.get("task_type") == task_type), None)
+    if match and match.get("best_agent"):
+        print(match["best_agent"])
+        sys.exit(0)
+except Exception:
+    pass
+
+# Fallback default mapping
+defaults = {
+    "security": "gemini",
+    "architecture": "gemini",
+    "code": "copilot",
+    "implementation": "copilot",
+    "testing": "copilot",
+    "code_review": "copilot",
+    "implement_feature": "copilot",
+}
+print(defaults.get(task_type, "auto"))
+PYEOF
 }
 
-# Analyze batch for patterns
+# Analyze batch outcomes and write a summary JSON
+# Args: batch_id
+# Prints: path to analysis file
 analyze_batch() {
-    local batch_id="$1"
+    local batch_id="${1:-}"
+    _ensure_learn_dirs
 
     local learn_file="$LEARN_DIR/batch-${batch_id}-analysis.json"
 
-    local success_count=0
-    local failure_count=0
-    local total_tokens=0
-    local total_duration=0
-    local agent_stats="{}"
-    local task_stats="{}"
+    python3 - "$batch_id" "$LEARN_DB" "$learn_file" <<'PYEOF'
+import json, sys, datetime, os
 
-    # Read all learnings for this batch
-    while IFS= read -r line; do
-        [[ -z "$line" ]] && continue
+_, batch_id, learn_db, learn_file = sys.argv
 
-        local success
-        success=$(echo "$line" | jq -r '.success')
-        local agent
-        agent=$(echo "$line" | jq -r '.agent')
-        local task_type
-        task_type=$(echo "$line" | jq -r '.task_type')
-        local tokens
-        tokens=$(echo "$line" | jq -r '.tokens')
-        local duration
-        duration=$(echo "$line" | jq -r '.duration')
+success_count = 0
+failure_count = 0
+total_tokens = 0
+total_duration = 0
+total_tasks = 0
+agent_stats = {}
 
-        if [[ "$success" == "true" ]]; then
-            ((success_count++)) || true
-        else
-            ((failure_count++)) || true
-        fi
+if os.path.exists(learn_db):
+    with open(learn_db, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except Exception:
+                continue
+            if rec.get("batch_id") != batch_id:
+                continue
+            total_tasks += 1
+            if rec.get("success"):
+                success_count += 1
+            else:
+                failure_count += 1
+            tokens = int(rec.get("tokens", 0) or 0)
+            duration = int(rec.get("duration", 0) or 0)
+            total_tokens += tokens
+            total_duration += duration
+            agent = rec.get("agent", "unknown")
+            if agent not in agent_stats:
+                agent_stats[agent] = {"tokens": 0, "count": 0}
+            agent_stats[agent]["tokens"] += tokens
+            agent_stats[agent]["count"] += 1
 
-        total_tokens=$((total_tokens + tokens))
-        total_duration=$((total_duration + duration))
-
-        # Update agent stats
-        local agent_tokens
-        agent_tokens=$(echo "$agent_stats" | jq -r --arg a "$agent" '.[$a].tokens // 0')
-        agent_stats=$(echo "$agent_stats" | jq --arg a "$agent" \
-            --argjson t "$((agent_tokens + tokens))" \
-            '.[$a] = {"tokens": $t, "count": (.[$a].count // 0) + 1}')
-
-    done < <(jq --arg b "$batch_id" 'select(.batch_id == $b)' "$LEARN_DB" 2>/dev/null)
-
-    # Generate analysis
-    cat > "$learn_file" <<EOF
-{
-  "batch_id": "$batch_id",
-  "summary": {
-    "success_count": $success_count,
-    "failure_count": $failure_count,
-    "total_tokens": $total_tokens,
-    "total_duration": $total_duration
-  },
-  "agent_stats": $agent_stats,
-  "task_stats": $task_stats,
-  "analyzed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-}
-EOF
-
-    echo "$learn_file"
+result = {
+    "batch_id": batch_id,
+    "total_tasks": total_tasks,
+    "summary": {
+        "success_count": success_count,
+        "failure_count": failure_count,
+        "total_tokens": total_tokens,
+        "total_duration": total_duration,
+    },
+    "agent_stats": agent_stats,
+    "analyzed_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
 }
 
-# Get routing advice
+with open(learn_file, "w") as f:
+    json.dump(result, f, indent=2)
+
+print(learn_file)
+PYEOF
+}
+
+# Get routing advice for a task type
+# Args: task_type
 get_routing_advice() {
-    local task_type="$1"
+    local task_type="${1:-}"
 
     init_routing_rules
 
-    local advice="Use recommended agent for $task_type: $(get_agent_recommendation "$task_type")"
+    local recommended
+    recommended=$(get_agent_recommendation "$task_type")
 
-    # Check if we have learnings
-    local count
-    count=$(wc -l < "$LEARN_DB" 2>/dev/null || echo "0")
+    python3 - "$task_type" "$recommended" "$LEARN_DB" "$ROUTING_RULES" <<'PYEOF'
+import json, sys, os
 
-    if [[ "$count" -gt 10 ]]; then
-        # Get top agents for this task type
-        local top_agents
-        top_agents=$(jq --arg tt "$task_type" \
-            '[.rules[] | select(.task_type == $tt)] | sort_by(.cost_per_min) | .[0:3]' \
-            "$ROUTING_RULES" 2>/dev/null)
+_, task_type, recommended, learn_db, routing_rules_path = sys.argv
 
-        if [[ -n "$top_agents" ]] && [[ "$top_agents" != "[]" ]]; then
-            advice+="\n\nTop agents by cost efficiency:\n$top_agents"
-        fi
-    fi
+count = 0
+if os.path.exists(learn_db):
+    with open(learn_db, "r") as f:
+        count = sum(1 for line in f if line.strip())
 
-    echo "$advice"
+advice = f"Use recommended agent for {task_type}: {recommended}"
+
+if count > 10:
+    try:
+        with open(routing_rules_path, "r") as f:
+            data = json.load(f)
+        top = sorted(
+            [r for r in data.get("rules", []) if r.get("task_type") == task_type],
+            key=lambda r: r.get("cost_per_min", 999999)
+        )[:3]
+        if top:
+            advice += "\n\nTop agents by cost efficiency:"
+            for r in top:
+                advice += f"\n  {r.get('best_agent')} (cost_per_min={r.get('cost_per_min')})"
+    except Exception:
+        pass
+
+print(advice)
+PYEOF
 }
 
-# Main (only run if executed directly, not sourced)
-if [[ -n "${BASH_SOURCE[0]:-}" ]] && [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+# Main (only when executed directly, not sourced)
+if [ -n "${BASH_SOURCE[0]:-}" ] && [ "${BASH_SOURCE[0]}" = "${0}" ]; then
     case "${1:-}" in
         learn)       shift; learn_from_outcome "$@" ;;
         analyze)     shift; analyze_batch "$@" ;;
         recommend)   shift; get_agent_recommendation "$@" ;;
         advice)      shift; get_routing_advice "$@" ;;
-        *)           echo "Usage: $0 learn|analyze|recommend|advice" >&2; exit 1 ;;
+        *) echo "Usage: $0 learn|analyze|recommend|advice" >&2; exit 1 ;;
     esac
 fi

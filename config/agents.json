@@ -6,7 +6,7 @@
       "capabilities": ["code", "draft", "fast"],
       "channel": "router"
     },
-    "gemlow": {
+    "oc-low": {
       "cost_tier": 1,
       "cost_per_1k_tokens": 0.0005,
       "capabilities": ["quick-answer", "summarize", "classify"],
@@ -25,7 +25,7 @@
       "capabilities": ["fast-analysis", "quick-answer"],
       "channel": "gemini_cli"
     },
-    "gemmed": {
+    "oc-medium": {
       "cost_tier": 3,
       "cost_per_1k_tokens": 0.002,
       "capabilities": ["code", "refactor", "review", "tests", "implementation"],
@@ -44,7 +44,7 @@
       "capabilities": ["code", "code-review", "ui-ux", "repo-aware"],
       "channel": "copilot_cli"
     },
-    "gempro": {
+    "oc-high": {
       "cost_tier": 4,
       "cost_per_1k_tokens": 0.0025,
       "capabilities": ["architecture", "system-design", "requirements", "deep-reasoning"],
@@ -69,6 +69,34 @@
       "cost_per_1k_tokens": 0.015,
       "capabilities": ["deep-reasoning", "architecture", "complex-analysis"],
       "channel": "router"
+    },
+    "claude-review": {
+      "cost_tier": 3,
+      "cost_per_1k_tokens": 0.003,
+      "capabilities": ["code", "code-review", "refactor", "repo-aware"],
+      "channel": "router",
+      "note": "Primary reviewer slot"
+    },
+    "claude-review-backup": {
+      "cost_tier": 3,
+      "cost_per_1k_tokens": 0.003,
+      "capabilities": ["code", "code-review", "refactor"],
+      "channel": "router",
+      "note": "Failover for claude-review"
+    },
+    "claude-architect": {
+      "cost_tier": 4,
+      "cost_per_1k_tokens": 0.004,
+      "capabilities": ["architecture", "system-design", "security-audit", "api-design", "deep-reasoning"],
+      "channel": "router",
+      "note": "Primary architect slot"
+    },
+    "claude-architect-backup": {
+      "cost_tier": 4,
+      "cost_per_1k_tokens": 0.004,
+      "capabilities": ["architecture", "system-design", "security-audit", "api-design", "deep-reasoning"],
+      "channel": "router",
+      "note": "Failover for claude-architect"
     }
   }
 }
