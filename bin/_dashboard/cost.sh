@@ -26,13 +26,13 @@ BLUE='\033[0;34m'; CYAN='\033[0;36m'; BOLD='\033[1m'; RESET='\033[0m'
 # Built-in fallback estimates (used when agents.json is missing)
 # Format: "name\ttier\tcost_per_1k"
 BUILTIN_AGENTS='minimax-code	1	0.001
-gemlow	1	0.0005
+oc-low	1	0.0005
 cc/claude-haiku-4-5	2	0.00125
 gemini-flash	2	0.0006
-gemmed	3	0.002
+oc-medium	3	0.002
 cc/claude-sonnet-4-5	3	0.003
 gh/gpt-5.3-codex	3	0.003
-gempro	4	0.0025
+oc-high	4	0.0025
 cc/claude-sonnet-4-6	4	0.0035
 gemini-pro	4	0.0025
 cc/claude-opus-4-6	5	0.015'

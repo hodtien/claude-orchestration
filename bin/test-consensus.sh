@@ -62,7 +62,7 @@ echo ""
 CANDIDATES_JSON='[
   {"agent_id":"cc_claude_sonnet_4_6","output":"first candidate text","confidence":0.9},
   {"agent_id":"gh_gpt_5_3_codex","output":"second candidate text","confidence":0.8},
-  {"agent_id":"gemmed","output":"third candidate text","confidence":0.7}
+  {"agent_id":"oc-medium","output":"third candidate text","confidence":0.7}
 ]'
 
 POSITIONS_JSON='[

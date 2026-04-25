@@ -155,6 +155,11 @@ if mode == "check":
                     sys.exit(0)  # copilot-cli available → healthy
                 except:
                     pass
+        elif check_agent.startswith(("oc-", "claude-", "cc/")) or check_agent == "minimax-code":
+            # Router/custom Claude aliases are served behind the local router,
+            # not by standalone CLI binaries. With no recent failure data, treat
+            # them as healthy and let agent.sh/router surface real failures.
+            sys.exit(0)
         sys.exit(2)  # CLI not found → agent DOWN
     sys.exit({"HEALTHY": 0, "DEGRADED": 1, "DOWN": 2}[agents[check_agent]["status"]])
 

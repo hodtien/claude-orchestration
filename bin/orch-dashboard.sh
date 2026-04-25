@@ -14,6 +14,7 @@ case "$cmd" in
   report)  source "$SCRIPT_DIR/_dashboard/report.sh" "$@" ;;
   db)      source "$SCRIPT_DIR/_dashboard/db.sh" "$@" ;;
   budget)  source "$SCRIPT_DIR/_dashboard/budget.sh" "$@" ;;
+  learn)   source "$SCRIPT_DIR/_dashboard/learn.sh" "$@" ;;
   ""|help|--help|-h)
     cat <<EOF
 orch-dashboard.sh — unified dashboard
@@ -25,6 +26,7 @@ Subcommands:
   report    Generate HTML report
   db        Metrics DB admin (import|trends|compare|slow|rollup|status)
   budget    Token budget utilization, burn rate, alerts. Flags: --json --since <duration> --model <name>
+  learn     Learning-engine stats: records, agent distribution, routing rules. Flags: --json --task-type --batch
 
 Examples:
   orch-dashboard.sh cost --since 24h
