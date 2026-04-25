@@ -14,10 +14,16 @@ node_modules/
 .orchestration/metrics.db
 .orchestration/pids/
 .orchestration/scheduled-tasks/
+.orchestration/audit.jsonl
+.orchestration/learnings/
+.orchestration/compressor-test/
+.orchestration/tasks/test-*/
+.orchestration/tasks/smoke-*/
+.orchestration/.*.partial.*
 
 # Keep versioned
 !.orchestration/templates/
-!.orchestration/tasks/
+!.orchestration/tasks/phase-*/
 !.orchestration/notify.conf
 
 # MCP servers
