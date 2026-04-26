@@ -10,6 +10,7 @@ import {
 } from "@/lib/types";
 import TraceDrawer from "./TraceDrawer";
 import BatchDagPanel from "./BatchDagPanel";
+import FailuresPanel from "./FailuresPanel";
 
 function pillClass(t: TaskEvent): string {
   if (isTerminal(t)) {
@@ -141,6 +142,8 @@ export default function Page() {
       </div>
 
       <BatchDagPanel onSelectTask={setSelectedTaskId} />
+
+      <FailuresPanel onSelectTask={setSelectedTaskId} />
 
       <section className="panel">
         <h2>Recent tasks</h2>

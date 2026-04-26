@@ -446,3 +446,80 @@ th.num {
   border-radius: 6px;
   margin-bottom: 12px;
 }
+
+.failures-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.failures-header h2 {
+  margin: 0;
+}
+
+.since-strip {
+  display: flex;
+  gap: 4px;
+}
+
+.since-btn {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.since-btn:hover {
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+
+.since-btn.active {
+  color: var(--accent);
+  border-color: color-mix(in oklch, var(--accent) 45%, var(--border));
+  background: color-mix(in oklch, var(--accent) 8%, var(--surface-2));
+}
+
+.slo-cards {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.slo-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 14px;
+  min-width: 120px;
+}
+
+.slo-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+
+.slo-value {
+  font-family: var(--mono);
+  font-size: 20px;
+  font-weight: 500;
+  margin-top: 2px;
+}
+
+.slo-err {
+  color: var(--err);
+}
+
+.failure-evt {
+  color: var(--text-dim);
+  font-size: 11px;
+}
