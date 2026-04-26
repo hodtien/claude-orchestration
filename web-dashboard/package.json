@@ -6,10 +6,11 @@
     "dev": "next dev -p 3737",
     "build": "next build",
     "start": "next start -p 3737",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "node --import tsx --test lib/*.test.ts"
   },
   "dependencies": {
-    "next": "14.2.13",
+    "next": "14.2.35",
     "react": "18.3.1",
     "react-dom": "18.3.1"
   },
@@ -17,6 +18,7 @@
     "@types/node": "20.12.7",
     "@types/react": "18.3.3",
     "@types/react-dom": "18.3.0",
+    "tsx": "4.19.2",
     "typescript": "5.4.5"
   }
 }

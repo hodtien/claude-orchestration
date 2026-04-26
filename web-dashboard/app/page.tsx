@@ -1,53 +1,21 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import {
+  isRunning,
+  isTerminal,
+  type CostPayload,
+  type TaskEvent,
+  type TasksPayload
+} from "@/lib/types";
 
-type TaskRow = {
-  ts?: string;
-  timestamp?: string;
-  event?: string;
-  task_id?: string;
-  agent?: string;
-  status?: string;
-  outcome?: string;
-  duration_s?: number;
-  prompt_chars?: number;
-  output_chars?: number;
-};
-
-type AgentCost = {
-  agent: string;
-  calls: number;
-  tokens_in: number;
-  tokens_out: number;
-  cost_usd: number;
-};
-
-type TasksPayload = {
-  source: string;
-  count: number;
-  tasks: TaskRow[];
-};
-
-type CostPayload = {
-  source: string;
-  totals: {
-    calls: number;
-    tokens_in: number;
-    tokens_out: number;
-    cost_usd: number;
-  };
-  per_agent: AgentCost[];
-};
-
-function pillClass(t: TaskRow): string {
-  const s = (t.status || t.outcome || t.event || "").toLowerCase();
-  if (s.includes("succ") || s.includes("complete") || s.includes("done"))
-    return "pill ok";
-  if (s.includes("fail") || s.includes("error") || s.includes("exhaust"))
+function pillClass(t: TaskEvent): string {
+  if (isTerminal(t)) {
+    const s = (t.status || t.outcome || t.event || "").toLowerCase();
+    if (/(succ|complete|done)/.test(s)) return "pill ok";
     return "pill err";
-  if (s.includes("start") || s.includes("running") || s.includes("attempt"))
-    return "pill warn";
+  }
+  if (isRunning(t)) return "pill warn";
   return "pill dim";
 }
 
@@ -66,50 +34,74 @@ function fmtTs(ts?: string): string {
   return ts.replace("T", " ").replace("Z", "");
 }
 
+const POLL_OK_MS = 5000;
+const POLL_BACKOFF_MAX_MS = 60000;
+
 export default function Page() {
   const [tasks, setTasks] = useState<TasksPayload | null>(null);
   const [cost, setCost] = useState<CostPayload | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [lastTick, setLastTick] = useState<string>("");
+  const failuresRef = useRef(0);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+
+    const schedule = (ms: number) => {
+      if (cancelled) return;
+      timerRef.current = setTimeout(fetchAll, ms);
+    };
+
     const fetchAll = async () => {
       try {
         const [tRes, cRes] = await Promise.all([
           fetch("/api/tasks", { cache: "no-store" }),
           fetch("/api/cost", { cache: "no-store" })
         ]);
+        if (!tRes.ok) throw new Error(`/api/tasks ${tRes.status}`);
+        if (!cRes.ok) throw new Error(`/api/cost ${cRes.status}`);
         const t = (await tRes.json()) as TasksPayload;
         const c = (await cRes.json()) as CostPayload;
-        if (!cancelled) {
-          setTasks(t);
-          setCost(c);
-          setErr(null);
-          setLastTick(new Date().toISOString().replace("T", " ").slice(0, 19));
-        }
+        if (cancelled) return;
+        setTasks(t);
+        setCost(c);
+        setErr(null);
+        failuresRef.current = 0;
+        setLastTick(new Date().toISOString().replace("T", " ").slice(0, 19));
+        schedule(POLL_OK_MS);
       } catch (e: unknown) {
-        if (!cancelled) setErr(e instanceof Error ? e.message : String(e));
+        if (cancelled) return;
+        failuresRef.current += 1;
+        setErr(e instanceof Error ? e.message : String(e));
+        const backoff = Math.min(
+          POLL_OK_MS * 2 ** failuresRef.current,
+          POLL_BACKOFF_MAX_MS
+        );
+        schedule(backoff);
       }
     };
+
     fetchAll();
-    const id = setInterval(fetchAll, 5000);
     return () => {
       cancelled = true;
-      clearInterval(id);
+      if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, []);
 
   const recent = tasks?.tasks?.slice(0, 50) ?? [];
-  const running = recent.filter((r) =>
-    /(start|running|attempt)/i.test(r.status || r.event || "")
-  ).length;
-  const succeeded = recent.filter((r) =>
-    /(succ|complete|done)/i.test(r.status || r.outcome || r.event || "")
-  ).length;
-  const failed = recent.filter((r) =>
-    /(fail|error|exhaust)/i.test(r.status || r.outcome || r.event || "")
-  ).length;
+  const now = Date.now();
+  const running = recent.filter((r) => isRunning(r, now)).length;
+  const succeeded = recent.filter((r) => {
+    if (!isTerminal(r)) return false;
+    const s = (r.status || r.outcome || r.event || "").toLowerCase();
+    return /(succ|complete|done)/.test(s);
+  }).length;
+  const failed = recent.filter((r) => {
+    if (!isTerminal(r)) return false;
+    const s = (r.status || r.outcome || r.event || "").toLowerCase();
+    return /(fail|error|exhaust|block|cancel)/.test(s);
+  }).length;
 
   return (
     <main>

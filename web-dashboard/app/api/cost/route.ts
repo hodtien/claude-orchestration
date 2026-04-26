@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { readJsonlTail } from "@/lib/jsonl";
 import { COST_LOG } from "@/lib/paths";
+import type { AgentRollup } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -14,14 +15,6 @@ type CostEntry = {
   tokens_output: number;
   cost_usd: number;
   duration_s?: number;
-};
-
-type AgentRollup = {
-  agent: string;
-  calls: number;
-  tokens_in: number;
-  tokens_out: number;
-  cost_usd: number;
 };
 
 export async function GET() {
