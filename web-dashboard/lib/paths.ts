@@ -26,6 +26,9 @@ export const RESULTS_DIR =
 export const REFLEXION_DIR =
   process.env.ORCH_REFLEXION_DIR || path.join(ORCH_DIR, "reflexion");
 
+export const TASKS_DIR =
+  process.env.ORCH_TASKS_DIR || path.join(ORCH_DIR, "tasks");
+
 export const COST_LOG =
   process.env.ORCH_COST_LOG ||
   path.join(HOME, ".claude", "orchestration", "cost-tracking.jsonl");

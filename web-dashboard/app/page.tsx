@@ -9,6 +9,7 @@ import {
   type TasksPayload
 } from "@/lib/types";
 import TraceDrawer from "./TraceDrawer";
+import BatchDagPanel from "./BatchDagPanel";
 
 function pillClass(t: TaskEvent): string {
   if (isTerminal(t)) {
@@ -138,6 +139,8 @@ export default function Page() {
           <div className="value">{fmtUsd(cost?.totals.cost_usd ?? 0)}</div>
         </div>
       </div>
+
+      <BatchDagPanel onSelectTask={setSelectedTaskId} />
 
       <section className="panel">
         <h2>Recent tasks</h2>

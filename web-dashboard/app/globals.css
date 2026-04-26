@@ -366,3 +366,83 @@ th.num {
   white-space: pre-wrap;
   word-break: break-all;
 }
+
+.batch-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.batch-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px 4px 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.batch-pill:hover {
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+
+.batch-pill.active {
+  color: var(--accent);
+  border-color: color-mix(in oklch, var(--accent) 45%, var(--border));
+  background: color-mix(in oklch, var(--accent) 8%, var(--surface-2));
+}
+
+.batch-pill-count {
+  display: inline-block;
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-size: 10px;
+  text-align: center;
+  color: var(--text-dim);
+}
+
+.batch-pill.active .batch-pill-count {
+  color: var(--accent);
+  border-color: color-mix(in oklch, var(--accent) 35%, var(--border));
+}
+
+.dag-scroll {
+  overflow: auto;
+  max-height: 520px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.dag-svg {
+  display: block;
+}
+
+.dag-node:hover rect {
+  filter: brightness(1.15);
+}
+
+.dag-edge {
+  pointer-events: none;
+}
+
+.dag-cycle-banner {
+  border: 1px solid color-mix(in oklch, var(--err) 45%, var(--border));
+  background: color-mix(in oklch, var(--err) 10%, var(--surface-2));
+  color: var(--err);
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
