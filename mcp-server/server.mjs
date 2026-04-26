@@ -137,6 +137,9 @@ function checkBatchStatus(batchId) {
       try { report = JSON.parse(reportContent); } catch {}
     }
 
+    // Phase 10: detect hybrid escalation marker
+    const escalateInteractive = existsSync(join(resultsDir, `${tid}.escalate-interactive`));
+
     return {
       id: tid,
       agent,
@@ -147,12 +150,14 @@ function checkBatchStatus(batchId) {
       result_bytes: resultSize,
       revisions: revisions.map((r) => r.replace(".out", "")),
       report,
+      escalate_interactive: escalateInteractive,
     };
   });
 
   const done = tasks.filter((t) => t.status === "done").length;
   const failed = tasks.filter((t) => t.status === "failed").length;
   const pending = tasks.filter((t) => t.status === "pending").length;
+  const interactiveEscalations = tasks.filter((t) => t.escalate_interactive).length;
 
   return {
     batch: batchId,
@@ -160,6 +165,7 @@ function checkBatchStatus(batchId) {
     done,
     failed,
     pending,
+    interactive_escalations: interactiveEscalations,
     all_complete: pending === 0 && failed === 0,
     tasks,
   };

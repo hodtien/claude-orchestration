@@ -44,6 +44,17 @@ Best for: ≥2 independent tasks, large codebases, when you want 0-token-burn wh
 Claude spawns agents via the Agent tool or calls the `9router-agent` MCP `route_task` tool.
 Best for: one-off tasks, ambiguous scope, when you want to iterate with the subagent.
 
+### Mode 3 — Hybrid (auto-pick per task)
+Use `/dispatch` — the hybrid resolver (`lib/hybrid-resolver.sh`) picks `async` or `interactive` per task using `config/models.yaml` `task_mapping[].mode` + `hybrid_policy` heuristics:
+1. explicit `mode: async|interactive` wins
+2. `consensus: true` → async
+3. `depends_on` set → async
+4. `task_count >= interactive_threshold_tasks` (default 2) → async
+5. `prompt_length > interactive_max_prompt_chars` (default 8000) → async
+6. otherwise → interactive (Agent tool with `interactive_agent` subagent_type)
+
+**Escalation path:** when an async task exhausts retries (consensus no-survivors, consensus disagreement, or DLQ after retries) and `hybrid_policy.escalate_on_exhausted: true`, `task-dispatch.sh` writes `.orchestration/results/<tid>.escalate-interactive`. `check_batch_status` surfaces it as `escalate_interactive: true` per task plus `interactive_escalations` count. On next `check_inbox`, Claude re-runs the failed task interactively via the Agent tool with full prior context.
+
 **PM judgment first.** The routing table below is the default — break it when it makes sense.
 
 ---

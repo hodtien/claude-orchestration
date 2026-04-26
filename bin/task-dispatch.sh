@@ -81,6 +81,12 @@ else
     load_session_context() { echo '{}'; }
     inject_session_brief() { echo "$2"; }
 fi
+# shellcheck source=../lib/hybrid-resolver.sh
+if [ -f "$SCRIPT_DIR/../lib/hybrid-resolver.sh" ]; then
+    . "$SCRIPT_DIR/../lib/hybrid-resolver.sh"
+else
+    should_escalate_on_exhausted() { echo "true"; }
+fi
 BATCH_DIR="${1:?Usage: task-dispatch.sh <batch-dir> [--parallel|--status]}"
 MODE="${2:---sequential}"
 # Always retry skipped/failed tasks — no flag needed
@@ -1169,6 +1175,9 @@ dispatch_task_consensus() {
      echo "[consensus] $tid → EXHAUSTED after 2 reflexion attempts"
      : > "$RESULTS_DIR/${tid}.failed"
      write_consensus_json_exhausted "$tid" "$task_type" 0 0.0
+     if [ "$(should_escalate_on_exhausted)" = "true" ]; then
+       : > "$RESULTS_DIR/${tid}.escalate-interactive"
+     fi
      # Phase 8.1: write status JSON — no survivors, all exhausted
      _cand_csv=$(IFS=,; echo "${candidates_list[*]}")
      _write_status_consensus "$tid" "$task_type" "failed" "failed" \
@@ -1289,6 +1298,9 @@ print(json.dumps(sys.stdin.read()))
      printf '%s' "$merged_output" > "$RESULTS_DIR/${tid}.out"
      : > "$RESULTS_DIR/${tid}.exhausted"
      write_consensus_json_exhausted "$tid" "$task_type" "$successful_count" "$computed_score"
+     if [ "$(should_escalate_on_exhausted)" = "true" ]; then
+       : > "$RESULTS_DIR/${tid}.escalate-interactive"
+     fi
      # Phase 8.1: write status JSON — disagreement exhausted
      _cand_csv=$(IFS=,; echo "${candidates_list[*]}")
      _succ_csv=$(IFS=,; echo "${successful_candidates[*]}")
@@ -1968,6 +1980,9 @@ PYEOF
   fi
   if ! move_to_dlq "$spec" "$tid" "$agent" "$retries"; then
     echo "[dispatch] ⚠️  failed to write DLQ artifacts for $tid" >&2
+  fi
+  if [ "$(should_escalate_on_exhausted)" = "true" ]; then
+    : > "$RESULTS_DIR/${tid}.escalate-interactive"
   fi
 
   # Self-Healing DAG

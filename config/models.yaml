@@ -140,6 +140,8 @@ models:
     note: Failover for claude-architect (same tier, different upstream account/quota).
 task_mapping:
   quick_answer:
+    mode: interactive
+    interactive_agent: general-purpose
     parallel:
     - oc-low
     - minimax-code
@@ -147,6 +149,8 @@ task_mapping:
     - cc/claude-haiku-4-5
     rationale: oc-low handles fast classification; minimax as backup.
   summarize:
+    mode: interactive
+    interactive_agent: general-purpose
     parallel:
     - oc-low
     - minimax-code
@@ -154,12 +158,16 @@ task_mapping:
     - cc/claude-haiku-4-5
     note: minimax-code is last-resort backup for all task types
   classify_intent:
+    mode: interactive
+    interactive_agent: general-purpose
     parallel:
     - oc-low
     - minimax-code
     fallback:
     - cc/claude-haiku-4-5
   implement_feature:
+    mode: auto
+    interactive_agent: general-purpose
     parallel:
     - oc-medium
     - gh/gpt-5.3-codex
@@ -170,6 +178,8 @@ task_mapping:
     rationale: oc-medium for coding; copilot for repo context; Claude premium
       as safety net; minimax-code as last resort.
   fix_bug:
+    mode: auto
+    interactive_agent: general-purpose
     parallel:
     - oc-medium
     - gh/gpt-5.3-codex
@@ -178,6 +188,8 @@ task_mapping:
     - cc/claude-sonnet-4-6
     - cc/claude-opus-4-6
   refactor_code:
+    mode: auto
+    interactive_agent: code-simplifier
     parallel:
     - oc-medium
     - gh/gpt-5.3-codex
@@ -186,6 +198,8 @@ task_mapping:
     - cc/claude-sonnet-4-6
     - cc/claude-opus-4-6
   write_tests:
+    mode: auto
+    interactive_agent: tdd-guide
     parallel:
     - oc-medium
     - gh/gpt-5.3-codex
@@ -196,6 +210,7 @@ task_mapping:
     rationale: oc-medium handles test generation; copilot for repo-aware tests;
       minimax-code last resort.
   code_review:
+    mode: async
     consensus: true
     parallel:
     - claude-review
@@ -206,6 +221,8 @@ task_mapping:
     rationale: claude-review + backup as primary/secondary reviewers; oc-medium fallback;
       minimax-code last resort.
   ui_ux_review:
+    mode: auto
+    interactive_agent: general-purpose
     parallel:
     - claude-review
     - gh/gpt-5.3-codex
@@ -214,6 +231,8 @@ task_mapping:
     - claude-review-backup
     - cc/claude-sonnet-4-6
   architecture_analysis:
+    mode: async
+    interactive_agent: architect
     consensus: true
     parallel:
     - claude-architect
@@ -224,6 +243,8 @@ task_mapping:
     rationale: claude-architect + backup for deep reasoning; oc-high as lighter fallback;
       minimax-code last resort.
   security_audit:
+    mode: async
+    interactive_agent: security-reviewer
     consensus: true
     parallel:
     - claude-review
@@ -234,6 +255,8 @@ task_mapping:
     rationale: claude-review + openclaude-gpt for security analysis; oc-medium as fallback;
       minimax-code last resort.
   analyze_requirements:
+    mode: auto
+    interactive_agent: planner
     parallel:
     - oc-high
     - minimax-code
@@ -244,6 +267,8 @@ task_mapping:
     rationale: oc-high for requirements analysis (lighter than claude-architect);
       claude-architect as premium fallback; minimax-code last resort.
   create_user_stories:
+    mode: auto
+    interactive_agent: planner
     parallel:
     - oc-high
     - minimax-code
@@ -251,6 +276,8 @@ task_mapping:
     - cc/claude-sonnet-4-6
     - claude-architect
   design_api:
+    mode: async
+    interactive_agent: architect
     consensus: true
     parallel:
     - claude-architect
@@ -262,6 +289,8 @@ task_mapping:
     rationale: claude-architect for API design; Claude Sonnet as parallel option;
       minimax-code as backup. claude-architect-backup failover if primary rate-limited.
   system_design:
+    mode: auto
+    interactive_agent: architect
     parallel:
     - claude-architect
     fallback:
@@ -269,6 +298,8 @@ task_mapping:
     - minimax-code
     rationale: claude-architect primary; backup fallback; minimax-code last resort.
   write_dockerfile:
+    mode: auto
+    interactive_agent: general-purpose
     parallel:
     - oc-medium
     - cc/claude-sonnet-4-5
@@ -276,6 +307,8 @@ task_mapping:
     fallback:
     - cc/claude-sonnet-4-6
   setup_ci_cd:
+    mode: auto
+    interactive_agent: general-purpose
     parallel:
     - oc-medium
     - cc/claude-sonnet-4-6
@@ -283,6 +316,8 @@ task_mapping:
     fallback:
     - cc/claude-sonnet-4-5
   repo_analysis:
+    mode: async
+    interactive_agent: code-explorer
     parallel:
     - claude-architect
     - minimax-code
@@ -295,6 +330,8 @@ task_mapping:
       context window ≠ gemini-pro 1M — if routed workload truly needs 1M tokens,
       use gemini-pro directly via route_task.
   default:
+    mode: auto
+    interactive_agent: general-purpose
     parallel:
     - oc-low
     - minimax-code
@@ -307,6 +344,18 @@ parallel_policy:
   cancel_slower_on_first_success: true
   timeout_per_model_sec: 120
   sim_threshold: 0.3
+hybrid_policy:
+  default_mode: auto
+  interactive_threshold_tasks: 2
+  interactive_max_prompt_chars: 8000
+  escalate_on_exhausted: true
+  rationale: |
+    Auto-mode heuristics (evaluated in order):
+    1. consensus: true → async (multi-agent fan-out required)
+    2. has depends_on → async (DAG resolution required)
+    3. task_count >= interactive_threshold_tasks → async
+    4. prompt_length > interactive_max_prompt_chars → async
+    5. otherwise → interactive (Agent tool subagent_type from interactive_agent)
 react_policy:
   react_mode: false
   react_max_turns: 3
