@@ -16,6 +16,7 @@ case "$cmd" in
   budget)  source "$SCRIPT_DIR/_dashboard/budget.sh" "$@" ;;
   learn)   source "$SCRIPT_DIR/_dashboard/learn.sh" "$@" ;;
   react)   source "$SCRIPT_DIR/_dashboard/react.sh" "$@" ;;
+  context) source "$SCRIPT_DIR/_dashboard/context.sh" "$@" ;;
   ""|help|--help|-h)
     cat <<EOF
 orch-dashboard.sh — unified dashboard
@@ -29,6 +30,7 @@ Subcommands:
   budget    Token budget utilization, burn rate, alerts. Flags: --json --since <duration> --model <name>
   learn     Learning-engine stats: records, agent distribution, routing rules. Flags: --json --task-type --batch
   react     Show ReAct observe/think/act traces. Flags: --json --task-id <id>
+  context   Show session context briefs for task pipelines. Flags: --json --task-id <id>
 
 Examples:
   orch-dashboard.sh cost --since 24h

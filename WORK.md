@@ -16,7 +16,7 @@ Phase 7 order: **7.2 first → 7.1 second** (eval-harness needed to measure cons
   - **Acceptance:** `eval-harness.sh code_review` runs golden cases → report table → writes to `.orchestration/evals/results/<date>.json`
   - ✅ DONE: `bin/eval-harness.sh` (439 lines), 2 golden cases (unused_variable.yaml, fizzbuzz.yaml), subcommands: list, results, --model filter, --verbose
 
-- [ ] `7.1` Wire `lib/consensus-vote.sh` + switch `pick_strategy` to `consensus` (P1)
+- [x] `7.1` Wire `lib/consensus-vote.sh` + switch `pick_strategy` to `consensus` (P1) ✅ DONE 2026-04-24
   - **Scope:** Implement real consensus logic: if ≥2 models return output, call `consensus_vote` (semantic similarity via gemini-low + majority), return merged result
   - **Acceptance:** Dispatch `design_api` task with parallel=[gemini-pro, cc/claude-sonnet-4-6] → both return → consensus-vote selects/merges → output has `consensus_score: 0.85`
   - **Config flag:** `parallel_policy.pick_strategy: consensus` in models.yaml
@@ -79,21 +79,54 @@ Target: +60 tests (136 → 196+). Self-referential: orchestration builds itself.
 
 **Phase 9 Status: COMPLETE** u2014 9.1 decomposition u2192 9.2 learning loop u2192 9.3 ReAct u2192 9.4 session context. All dormant scaffolds wired + feedback loop closed.
 
+**Phase 10: Reliability, Verification & Cleanup — Make the orchestrator boring under load**
+
+Intent: after Phases 6–9 added orchestration intelligence, Phase 10 should reduce operational uncertainty: one-command verification, schema validation, integration proof, dashboard consolidation, and dead-code cleanup. This is the stabilizing layer before adding cross-project orchestration or speculative execution.
+
+Recommended dispatch order: **10.1 + 10.2 parallel → 10.3 → 10.4**. Keep each sub-phase as core + test task specs, same as Phase 9.
+
+- [ ] `10.1` Unified verification runner (P1)
+  - **Scope:** Add `bin/run-all-tests.sh` to discover/run all `bin/test-*.sh`, aggregate pass/fail counts, runtime, failed script logs, and optional `--json` output.
+  - **Why now:** There are 11 standalone test scripts with ~230+ assertions, but no single entrypoint to prove the system is healthy.
+  - **Acceptance:** `bash bin/run-all-tests.sh` runs all suites; `--json` emits machine-readable summary; exits non-zero on any failure; supports `--fail-fast`.
+
+- [ ] `10.2` Full pipeline integration smoke test (P1)
+  - **Scope:** Add `bin/test-full-integration.sh` using a tiny local/offline-safe task path where possible: dispatch → result artifact → `.status.json` → metrics rollup → dashboard visibility → MCP query syntax.
+  - **Why now:** Existing tests cover libraries well, but not the whole dispatch/status/metrics/dashboard chain as one behavior.
+  - **Acceptance:** Integration test creates isolated temp `.orchestration`, leaves no repo runtime artifacts, verifies status final_state, verifies rollup includes the task, verifies dashboard command reads it.
+
+- [ ] `10.3` Config schema validation (P1)
+  - **Scope:** Add `lib/config-validator.sh` + `bin/test-config-validator.sh` for `config/models.yaml` and `config/budget.yaml` structural validation using python3 stdlib only.
+  - **Why now:** Routing, consensus, ReAct, learning, and budget behavior depend on YAML config shape; bad config currently fails late and unevenly.
+  - **Acceptance:** `bash lib/config-validator.sh config/models.yaml config/budget.yaml` validates required keys, task_type mappings, parallel_policy fields, budget limits, numeric thresholds; bad fixtures fail with clear errors.
+
+- [ ] `10.4` Dashboard and MCP tool index consolidation (P2)
+  - **Scope:** Add `orch-dashboard.sh status` or `overview` that combines batch status, recent failures, token budget, learning hints, ReAct/session context counts; add a generated/static MCP tool inventory check against `mcp-server/server.mjs`.
+  - **Why now:** Observability exists, but it is fragmented across budget/react/context/learn/metrics/trace commands.
+  - **Acceptance:** One dashboard command gives PM-ready health in <2s; test verifies all expected subcommands are listed in help; MCP inventory matches server tool registrations.
+
+- [ ] `10.5` Dead-code and deprecated surface audit (P3)
+  - **Scope:** Audit `lib/` and `bin/deprecated/`; classify active, dormant-but-planned, deprecated, and removable. Only remove code with zero runtime references and clear replacement.
+  - **Why now:** `task-dispatch.sh` is ~2.4k lines and `lib/` has several dormant modules; cleanup lowers future routing mistakes.
+  - **Acceptance:** Produce a deletion/keep list in `WORK.md`; move safe removals to `lib/deprecated/` or delete if already archived; run full verification runner after cleanup.
+
+**Phase 10 Success Criteria:** one-command test confidence, one integration proof of the dispatch pipeline, config errors caught before runtime, one PM-level dashboard view, and a smaller trusted active surface.
+
 ---
 
 ## Icebox
 
-- [ ] Cross-project orchestration (wire `lib/cross-project.sh` when second project adopts)
-- [ ] Speculation buffer (`lib/speculation-buffer.sh` — premature without concurrent file-editing agents)
-- [ ] Move 9 deprecated libs → `lib/deprecated/` (cleanup cosmetic)
-- [ ] `D.2` `setup-router.sh apply` to `~/.claude/settings.json`
+_Audited 2026-04-26. Items below are trigger-based — not actionable until their trigger fires._
+
+- [ ] Cross-project orchestration — wire `lib/cross-project.sh` **Trigger:** second project adopts orchestration. Note: lib has source-time side effects (`mkdir -p`) and `jq`/`bc` deps; needs cleanup before wiring.
+- [ ] Speculation buffer — wire `lib/speculation-buffer.sh` **Trigger:** concurrent file-editing agents available. Note: lib has source-time `mkdir`, no BASH_SOURCE guard, `jq` dep; needs safety fixes before wiring.
 
 ---
 
 ## Deferred (trigger-based, not timeline-based)
 
-- [ ] `D.1` Move 9 deprecated libs → `lib/deprecated/` (cleanup cosmetic, 1 month after Phase 6 stable)
-- [ ] `D.2` `setup-router.sh apply` to `~/.claude/settings.json` (when ready to switch Claude Code to 9router officially)
+- [ ] `D.1` Move 9 deprecated libs → `lib/deprecated/` (cleanup cosmetic, ~1 month after Phase 6 stable = ~May 23). Subsumed by Phase 10.5 dead-code audit.
+- [x] `D.2` ~~`setup-router.sh apply` to `~/.claude/settings.json`~~ — ALREADY APPLIED. `bash bin/setup-router.sh --status` confirms `ANTHROPIC_BASE_URL=http://localhost:20128/v1`. Backup at `~/.claude/settings.json.before-router.bak`. Closed 2026-04-26.
 
 ---
 
@@ -103,8 +136,9 @@ Target: +60 tests (136 → 196+). Self-referential: orchestration builds itself.
 |-------|----------|-------|------------------|
 | Phase 6 | P0 | 6.1, 6.2, 6.3, 6.4 | 1–1.5 weeks |
 | Phase 7 | P1 | 7.1, 7.2, 7.3 | 1–2 weeks |
-| Phase 8 | P1 | 8.1, 8.2, 8.3 | 1 week |
+| Phase 8 | P1 | 8.1, 8.2, 8.3, 8.4 | 1 week |
 | Phase 9 | P2 | 9.1, 9.2, 9.3, 9.4 | On-demand, skip OK |
+| Phase 10 | P1 | 10.1, 10.2, 10.3, 10.4, 10.5 | 1 week |
 
 **Rollback plan:** Each P0/P1 task has rollback ≤5 lines. Keep fallback flags in `config/models.yaml` to disable feature when needed.
 
