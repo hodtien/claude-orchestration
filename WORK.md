@@ -15,10 +15,15 @@
   - **Acceptance:** Spec with `model:` field dispatches to that exact model; missing field falls back to `task_mapping`; test added.
   - ✅ DONE: 3 surgical edits to `bin/task-dispatch.sh` (first_success short-circuit, consensus single-candidate collapse, AGENT_SH_MOCK in first_success path), `bin/test-model-override.sh` (6 assertions × 3 scenarios PASS), full suite 356/356 PASS in 15.34s.
 
-- [ ] `11.2` Web observability dashboard (P2, ~1 week)
+- [ ] `11.2` Web observability dashboard (P2, ~1 week) — **IN PROGRESS** 2026-04-26
   - **Scope:** Next.js (or static SPA) reading `.orchestration/audit.jsonl` + `cost-tracking.jsonl` + `tasks.jsonl`. Views: live batch DAG, per-model token burn, cost trend, recent failures, ReAct/session-context counts. Polls files; no DB.
   - **Why:** Observability fragmented across 6 dashboard subcommands. Web view consolidates for PM-level visibility.
   - **Acceptance:** `npm run dev` serves dashboard; reads real `.orchestration/`; refresh <2s; no writes back.
+  - **Milestones:**
+    - [x] M1 Scaffold (Next.js 14 App Router, port 3737, `/api/tasks`, `/api/cost`, dark theme, 5s polling, recent-tasks + cost-by-agent tables) 2026-04-26
+    - [ ] M2 Audit/trace view (per-task event timeline from `audit.jsonl`)
+    - [ ] M3 Live batch DAG (group by `batch_id`, render dependency graph)
+    - [ ] M4 SLO panel + recent-failures filter from `lib/trace-query.sh recent_failures`
 
 - [x] `11.3` `/orchestration` alias for `/dispatch` (P3, ~10min) ✅ DONE 2026-04-27
   - **Scope:** Add `commands/orchestration.md` redirecting to `/dispatch`.
