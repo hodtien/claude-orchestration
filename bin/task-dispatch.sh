@@ -61,6 +61,16 @@ else
     learn_from_outcome() { return 0; }
     analyze_batch() { return 0; }
 fi
+# shellcheck source=../lib/react-loop.sh
+if [ -f "$SCRIPT_DIR/../lib/react-loop.sh" ]; then
+    . "$SCRIPT_DIR/../lib/react-loop.sh"
+else
+    react_enabled_for_task() { echo "false"; }
+    react_observe() { echo '{}'; }
+    react_think() { echo '{"decision":"accept"}'; }
+    react_record_trace() { return 0; }
+    react_select_next_agent() { return 0; }
+fi
 BATCH_DIR="${1:?Usage: task-dispatch.sh <batch-dir> [--parallel|--status]}"
 MODE="${2:---sequential}"
 # Always retry skipped/failed tasks — no flag needed
@@ -92,6 +102,10 @@ mkdir -p "$RESULTS_DIR" "$INBOX_DIR" "$PIDS_DIR" "$TASKS_DIR"
 BATCH_ID="$(basename "$BATCH_DIR")"
 BATCH_CONF="$BATCH_DIR/batch.conf"
 AUTO_DECOMPOSE="${AUTO_DECOMPOSE:-false}"
+REACT_MODE="${REACT_MODE:-false}"
+REACT_MAX_TURNS="${REACT_MAX_TURNS:-3}"
+REACT_QUALITY_THRESHOLD="${REACT_QUALITY_THRESHOLD:-0.7}"
+REACT_TRACE_DIR="${REACT_TRACE_DIR:-$ORCH_DIR/react-traces}"
 
 SHUTDOWN_IN_PROGRESS=false
 
@@ -1761,7 +1775,10 @@ PYEOF
   }
 
   : > "$RESULTS_DIR/${tid}.log"
-  for candidate_agent in $agent_candidates; do
+  while [ -n "$agent_candidates" ]; do
+    candidate_agent="${agent_candidates%% *}"
+    agent_candidates="${agent_candidates#* }"
+    [ "$agent_candidates" = "$candidate_agent" ] && agent_candidates=""
     [ -z "$candidate_agent" ] && continue
     failover_position=$((failover_position + 1))
     agent="$candidate_agent"
@@ -1830,6 +1847,41 @@ PYEOF
           if declare -f trigger_reflexion > /dev/null 2>&1; then
             trigger_reflexion "$tid" "$RESULTS_DIR/${tid}.out" "$gate_result" 2>/dev/null || true
           fi
+        fi
+      fi
+
+      local react_enabled="false"
+      react_enabled=$(react_enabled_for_task "$spec" "${task_type:-}" "${timeout:-0}" 2>/dev/null || echo "false")
+      if [ "$react_enabled" = "true" ]; then
+        local react_turns react_turn react_obs react_decision react_action react_next
+        react_turns=0
+        if [ -f "${REACT_TRACE_DIR:-$ORCH_DIR/react-traces}/${tid}.react.jsonl" ]; then
+          react_turns=$(wc -l < "${REACT_TRACE_DIR:-$ORCH_DIR/react-traces}/${tid}.react.jsonl" | tr -d ' ')
+        fi
+        case "$react_turns" in ''|*[!0-9]*) react_turns=0 ;; esac
+        react_turn=$((react_turns + 1))
+        react_obs=$(react_observe "$tid" "$agent" "$RESULTS_DIR/${tid}.out" "$RESULTS_DIR/${tid}.log" 2>/dev/null || echo '{}')
+        react_decision=$(react_think "$react_obs" "${REACT_QUALITY_THRESHOLD:-0.7}" 2>/dev/null || echo '{"decision":"accept"}')
+        react_record_trace "$tid" "$react_turn" "$agent" "$react_obs" "$react_decision" 2>/dev/null || true
+        react_action=$(python3 -c "import json,sys; print(json.loads(sys.argv[1]).get('decision','accept'))" "$react_decision" 2>/dev/null || echo "accept")
+
+        if [ "$react_action" = "redirect" ] && [ "$react_turn" -lt "${REACT_MAX_TURNS:-3}" ]; then
+          react_next=$(react_select_next_agent "$agent" "$agent_candidates" "$react_decision" 2>/dev/null || echo "")
+          if [ -n "$react_next" ]; then
+            cp "$RESULTS_DIR/${tid}.out" "$RESULTS_DIR/${tid}.react${react_turn}.${agent}.out" 2>/dev/null || true
+            echo "[dispatch] ReAct redirect: $tid $agent -> $react_next"
+            agent_candidates="$react_next $agent_candidates"
+            continue
+          fi
+          break
+        elif [ "$react_action" = "retry" ] && [ "$react_turn" -lt "${REACT_MAX_TURNS:-3}" ]; then
+          cp "$RESULTS_DIR/${tid}.out" "$RESULTS_DIR/${tid}.react${react_turn}.${agent}.out" 2>/dev/null || true
+          echo "[dispatch] ReAct retry: $tid on $agent"
+          agent_candidates="$agent $agent_candidates"
+          continue
+        elif [ "$react_action" = "abort" ]; then
+          echo "[dispatch] ReAct abort: $tid"
+          task_status="needs_revision"
         fi
       fi
 

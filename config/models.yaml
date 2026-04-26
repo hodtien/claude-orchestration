@@ -307,6 +307,10 @@ parallel_policy:
   cancel_slower_on_first_success: true
   timeout_per_model_sec: 120
   sim_threshold: 0.3
+react_policy:
+  react_mode: false
+  react_max_turns: 3
+  react_quality_threshold: 0.7
 router_hints:
   round_robin_accounts: true
   respect_quota: true

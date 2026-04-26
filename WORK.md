@@ -71,7 +71,7 @@ Full analysis: `docs/PLAN_phase9.md`. Dispatch order: 9.1+9.4 parallel → 9.2 �
 
 - [x] `9.1` Task auto-decomposition (P1) ✅ DONE 2026-04-25 — `lib/task-decomposer.sh` bug fixes, dispatch wire, MCP `decompose_preview`, 17/17 tests PASS
 - [x] `9.2` Learning loop (P1) ✅ DONE 2026-04-26 — `lib/learning-engine.sh` 4 bugs fixed, wired into dispatch, MCP `get_routing_advice`, `orch-dashboard.sh learn`, 30/30 tests PASS
-- [ ] `9.3` Adaptive dispatch / ReAct (P2) — new `lib/react-loop.sh`; observe/think/act on uncertain tasks; MCP `get_react_trace`; 10+ tests
+- [x] `9.3` Adaptive dispatch / ReAct (P2) ✅ DONE 2026-04-26 — `lib/react-loop.sh` (observe/think/act, quality scoring, path traversal guard), wired opt-in into `dispatch_task_first_success`, `react_policy` in models.yaml, MCP `get_react_trace`, `orch-dashboard.sh react`, `bin/test-react-loop.sh` 27/27 PASS
 - [ ] `9.4` Session context chains (P2) — new `lib/session-context.sh`; compressed session brief across `depends_on` pipeline; 10+ tests
 
 Each sub-phase: 2 task specs (core + test) dispatch-able via `task-dispatch.sh --parallel`.
@@ -112,6 +112,7 @@ Target: +60 tests (136 → 196+). Self-referential: orchestration builds itself.
 
 | Date | What | Where |
 |------|------|-------|
+| 2026-04-26 | **Phase 9.3 DONE** u2014 ReAct adaptive dispatch: `lib/react-loop.sh` (observe/think/act, quality heuristic, path traversal guard), opt-in wired into `dispatch_task_first_success` (redirect/retry/abort + output snapshot), `react_policy` in `config/models.yaml`, MCP `get_react_trace`, `bin/_dashboard/react.sh`, `bin/test-react-loop.sh` 27/27 PASS. Code review fixes: REACT_MODE=false hard-off, abort condition `has_error and score<threshold`, `break` on redirect-no-candidate, shell param expansion for agent list, backslash guard via regex. |
 | 2026-04-26 | **Phase 9.2 DONE** u2014 learning loop wired: `lib/learning-engine.sh` (4 bugs fixed, no jq/bc/mkdir at load), `learn_from_outcome` + `analyze_batch` wired into dispatch, `get_routing_advice` MCP tool, `bin/_dashboard/learn.sh`, `bin/test-learning-engine.sh` (30/30 PASS). Phase 9.2 COMPLETE. | lib/learning-engine.sh, bin/task-dispatch.sh, mcp-server/server.mjs, bin/_dashboard/learn.sh, bin/test-learning-engine.sh |
 | 2026-04-25 | **Phase 9.1 DONE** u2014 task auto-decomposition wired: `lib/task-decomposer.sh` (3 bugs fixed), `auto_decompose` flag + pre-dispatch hook in dispatch, `decompose_preview` MCP tool, `bin/test-task-decomposer.sh` (17/17 PASS), 5 fixtures in `test-fixtures/decomposer/`. | lib/task-decomposer.sh, bin/task-dispatch.sh, mcp-server/server.mjs, bin/test-task-decomposer.sh, test-fixtures/decomposer/* |
 | 2026-04-25 | **Phase 8.4 DONE** — token budget dashboard + MCP tool: `bin/_dashboard/budget.sh` (250 lines, python3 in-process), `config/budget.yaml`, `get_token_budget` MCP tool in server.mjs, 45/45 tests PASS. Phase 8 COMPLETE. | bin/_dashboard/budget.sh, config/budget.yaml, mcp-server/server.mjs, bin/test-budget-dashboard.sh, test-fixtures/budget/* |
