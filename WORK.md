@@ -7,6 +7,31 @@
 
 ## Active
 
+**Phase 11: UX & Operability Improvements (P2) — strategic backlog from 2026-04-26 review**
+
+- [x] `11.1` Task spec model override (P2, ~1h) ✅ DONE 2026-04-26
+  - **Scope:** Allow `model: claude-architect-backup` in task spec frontmatter to override `task_mapping[].parallel`/`fallback` for one task. Read via `_hybrid_task_field`-style helper; pass through to `agent.sh`.
+  - **Why:** Current routing is task_type-wide. Per-task override unblocks ad-hoc model pinning (debugging, cost control, A/B).
+  - **Acceptance:** Spec with `model:` field dispatches to that exact model; missing field falls back to `task_mapping`; test added.
+  - ✅ DONE: 3 surgical edits to `bin/task-dispatch.sh` (first_success short-circuit, consensus single-candidate collapse, AGENT_SH_MOCK in first_success path), `bin/test-model-override.sh` (6 assertions × 3 scenarios PASS), full suite 356/356 PASS in 15.34s.
+
+- [ ] `11.2` Web observability dashboard (P2, ~1 week)
+  - **Scope:** Next.js (or static SPA) reading `.orchestration/audit.jsonl` + `cost-tracking.jsonl` + `tasks.jsonl`. Views: live batch DAG, per-model token burn, cost trend, recent failures, ReAct/session-context counts. Polls files; no DB.
+  - **Why:** Observability fragmented across 6 dashboard subcommands. Web view consolidates for PM-level visibility.
+  - **Acceptance:** `npm run dev` serves dashboard; reads real `.orchestration/`; refresh <2s; no writes back.
+
+- [x] `11.3` `/orchestration` alias for `/dispatch` (P3, ~10min) ✅ DONE 2026-04-27
+  - **Scope:** Add `commands/orchestration.md` redirecting to `/dispatch`.
+  - **Acceptance:** `/orchestration <work>` produces identical behavior to `/dispatch <work>`.
+
+- [ ] `11.4` VSCode extension wrapping CLI (P3, ~2-3 weeks, deferred until 11.2 ships)
+  - **Scope:** Sidebar with batch inbox + cost dashboard + dispatch UI; shells out to `bin/task-dispatch.sh`. NOT a Claude Desktop replacement.
+  - **Acceptance:** Marketplace-installable; `Run /dispatch` from palette; inbox auto-refresh.
+
+- [ ] `11.5` Self-healing DAG redispatch (P2, blocked on 9.2 learning data, ~1 week)
+  - **Scope:** Failed task → learning-engine suggests spec edit → auto-redispatch if confidence >0.7.
+  - **Acceptance:** Known-cause failure auto-redispatches once; second failure escalates.
+
 **Phase 7: Consensus & Evaluation Harness (P1)**
 
 Phase 7 order: **7.2 first → 7.1 second** (eval-harness needed to measure consensus quality)

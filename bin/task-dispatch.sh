@@ -992,11 +992,21 @@ dispatch_task_consensus() {
  candidates_dir="$RESULTS_DIR/${tid}.candidates"
  mkdir -p "$candidates_dir"
 
+ # Phase 11.1: per-task model override pins the consensus fan-out to a single
+ # model (collapses consensus to first_success semantics for that task).
+ local _spec_model
+ _spec_model=$(parse_front "$spec" "model" "")
+
  # Build list of parallel candidates (capped at max_parallel)
  local -a candidates_list=()
- while IFS= read -r candidate_agent; do
-   [ -n "$candidate_agent" ] && candidates_list+=("$candidate_agent")
- done < <(get_parallel_candidates "$task_type")
+ if [ -n "$_spec_model" ]; then
+   candidates_list+=("$_spec_model")
+   echo "[consensus] event=model_override tid=$tid model=$_spec_model (consensus collapsed to single candidate)"
+ else
+   while IFS= read -r candidate_agent; do
+     [ -n "$candidate_agent" ] && candidates_list+=("$candidate_agent")
+   done < <(get_parallel_candidates "$task_type")
+ fi
 
  if [ ${#candidates_list[@]} -eq 0 ]; then
    echo "[consensus] WARN: no parallel candidates for $task_type — falling back to first_success" >&2
@@ -1515,25 +1525,37 @@ dispatch_task_first_success() {
   pid_file="$PIDS_DIR/${tid}.pid"
   cancelled_marker="$RESULTS_DIR/${tid}.cancelled"
   agent=$(parse_front "$spec" "agent" "gemini")
+  # Phase 11.1: per-task model override — `model: <name>` in spec frontmatter
+  # short-circuits the agent/agents resolution and pins dispatch to that exact
+  # model. Used for ad-hoc pinning (debugging, cost control, A/B testing).
+  local spec_model
+  spec_model=$(parse_front "$spec" "model" "")
   agents_front=$(parse_list "$spec" "agents")
-  if [ -n "$agents_front" ]; then
-    has_agents_list=true
-    agent_candidates="$agents_front"
+  if [ -n "$spec_model" ]; then
+    has_agents_list=false
+    agent="$spec_model"
+    agent_candidates="$spec_model"
+    echo "[dispatch] event=model_override tid=$tid model=$spec_model"
   else
-    agent_candidates="$agent"
-  fi
-  if [ -n "$agent_override" ]; then
-    if [ "$has_agents_list" = "true" ]; then
-      local reordered_candidates="$agent_override"
-      local chain_agent
-      for chain_agent in $agents_front; do
-        [ -z "$chain_agent" ] && continue
-        [ "$chain_agent" = "$agent_override" ] && continue
-        reordered_candidates="$reordered_candidates $chain_agent"
-      done
-      agent_candidates="$reordered_candidates"
+    if [ -n "$agents_front" ]; then
+      has_agents_list=true
+      agent_candidates="$agents_front"
     else
-      agent_candidates="$agent_override"
+      agent_candidates="$agent"
+    fi
+    if [ -n "$agent_override" ]; then
+      if [ "$has_agents_list" = "true" ]; then
+        local reordered_candidates="$agent_override"
+        local chain_agent
+        for chain_agent in $agents_front; do
+          [ -z "$chain_agent" ] && continue
+          [ "$chain_agent" = "$agent_override" ] && continue
+          reordered_candidates="$reordered_candidates $chain_agent"
+        done
+        agent_candidates="$reordered_candidates"
+      else
+        agent_candidates="$agent_override"
+      fi
     fi
   fi
   agent=$(printf '%s\n' "$agent_candidates" | awk '{print $1}')
@@ -1587,7 +1609,7 @@ dispatch_task_first_success() {
     fi
   fi
 
-  if [ "$prefer_cheap" = "true" ] && [ -n "$task_type" ] && [ "$has_agents_list" = "false" ] && [ -z "$agent_override" ]; then
+  if [ "$prefer_cheap" = "true" ] && [ -n "$task_type" ] && [ "$has_agents_list" = "false" ] && [ -z "$agent_override" ] && [ -z "$spec_model" ]; then
     local cheapest_agent
     cheapest_agent=$("$SCRIPT_DIR/agent-cost.sh" cheapest "$task_type" 2>/dev/null || true)
     if [ -n "$cheapest_agent" ]; then
@@ -1843,7 +1865,9 @@ PYEOF
 
     task_start=$(date +%s)
     rm -f "$cancelled_marker"
-    "$SCRIPT_DIR/agent.sh" "$agent" "$tid" "$prompt" "$timeout" "$retries" \
+    # agent_cmd supports AGENT_SH_MOCK override for testing (mirrors consensus path)
+    local agent_cmd_fs="${AGENT_SH_MOCK:-$SCRIPT_DIR/agent.sh}"
+    "$agent_cmd_fs" "$agent" "$tid" "$prompt" "$timeout" "$retries" \
       > "$RESULTS_DIR/${tid}.out" 2>> "$RESULTS_DIR/${tid}.log" &
     agent_pid=$!
     printf '%s\n' "$agent_pid" > "$pid_file"
