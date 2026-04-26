@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# DEPRECATED 2026-04-26: moved from lib/; no active runtime references, only deprecated callers remain.
 # provenance-tracker.sh — Track file origins and decision lineage
 
 # NOTE: Do NOT use set -e in this file. This lib is SOURCEd by callers that manage their own error handling.

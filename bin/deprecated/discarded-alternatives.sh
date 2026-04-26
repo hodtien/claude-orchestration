@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# DEPRECATED 2026-04-26: moved from lib/; no active runtime references, only deprecated callers remain.
 # discarded-alternatives.sh — Store and query discarded alternatives
 
 # NOTE: Do NOT use set -e in this file. This lib is SOURCEd by callers that manage their own error handling.
