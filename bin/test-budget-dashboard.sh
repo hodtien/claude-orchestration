@@ -153,9 +153,24 @@ echo
 # ── 6. --since filter ─────────────────────────────────────────────────────────
 echo "── --since filter: old entries excluded"
 export BUDGET_CONFIG="$FIXTURE/budget.yaml"
-export BUDGET_COST_LOG="$FIXTURE/cost-tracking.jsonl"
-# budget-task-001 at 08:00, budget-task-005 at 12:00 — within 24h of 14:00 UTC today
+# Generate fresh files with today's timestamps so --since 24h includes them
+TODAY=$(python3 -c "import datetime; print(datetime.datetime.utcnow().strftime('%Y-%m-%d'))")
+SINCE_COST_LOG=$(mktemp)
+cat > "$SINCE_COST_LOG" <<JSONL
+{"timestamp":"${TODAY}T08:01:00Z","agent":"copilot","batch_id":"b1","task_id":"budget-task-001","tokens_input":200,"tokens_output":100,"cost_usd":0,"duration_s":30}
+{"timestamp":"${TODAY}T12:01:00Z","agent":"oc-high","batch_id":"b3","task_id":"budget-task-005","tokens_input":400,"tokens_output":350,"cost_usd":0,"duration_s":40}
+JSONL
+SINCE_AUDIT=$(mktemp)
+cat > "$SINCE_AUDIT" <<JSONL
+{"event":"tier_assigned","task_id":"budget-task-001","tier":"TIER_STANDARD","tokens_estimated":500,"timestamp":"${TODAY}T08:00:00Z"}
+{"event":"tier_assigned","task_id":"budget-task-005","tier":"TIER_PREMIUM","tokens_estimated":800,"timestamp":"${TODAY}T12:00:00Z"}
+JSONL
+export BUDGET_COST_LOG="$SINCE_COST_LOG"
+export BUDGET_AUDIT_FILE="$SINCE_AUDIT"
 OUT=$(bash "$HELPER" --json --since 24h 2>/dev/null)
+rm -f "$SINCE_COST_LOG" "$SINCE_AUDIT"
+export BUDGET_COST_LOG="$FIXTURE/cost-tracking.jsonl"
+export BUDGET_AUDIT_FILE="$FIXTURE/audit.jsonl"
 VAL=$(json_get "$OUT" totals tokens_estimated); [ "$VAL" != "" ] && [ "$VAL" -gt "0" ] && pass "tokens_estimated > 0 after --since 24h" || fail "tokens_estimated" "got $VAL"
 VAL=$(json_get "$OUT" window);                  [ "$VAL" = "24h" ] && pass "window=24h" || fail "window" "got $VAL"
 echo
@@ -218,6 +233,7 @@ echo
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo "============================================================"
+echo "ALL $TOTAL TESTS: $PASS PASS, $FAIL FAIL"
 if [ $FAIL -eq 0 ]; then
   echo "  ALL $TOTAL TESTS PASSED"
 else

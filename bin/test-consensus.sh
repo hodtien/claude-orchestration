@@ -225,6 +225,7 @@ fi
 echo ""
 echo "------------------------------------------"
 echo "Results: $PASS passed, $FAIL failed"
+echo "ALL $((PASS+FAIL)) TESTS: $PASS PASS, $FAIL FAIL"
 echo ""
 
 if [[ "$FAIL" -eq 0 ]]; then

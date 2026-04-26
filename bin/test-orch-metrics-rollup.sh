@@ -183,6 +183,7 @@ fi
 echo
 
 # ── Summary ───────────────────────────────────────────────────────────────────
+echo "ALL $TOTAL TESTS: $PASS PASS, $FAIL FAIL"
 echo "============================================================"
 if [ $FAIL -eq 0 ]; then
   echo "  ALL $TOTAL TESTS PASSED"

@@ -122,6 +122,7 @@ fi
 echo ""
 echo "------------------------------------------"
 echo "Results: $PASS passed, $FAIL failed"
+echo "ALL $((PASS+FAIL)) TESTS: $PASS PASS, $FAIL FAIL"
 if [[ "$FAIL" -eq 0 ]]; then
     echo "PASS — Phase 8.1 task status JSON is healthy."
     exit 0

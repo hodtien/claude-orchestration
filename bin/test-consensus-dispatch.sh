@@ -430,6 +430,7 @@ echo "------------------------------------------"
 echo "Results: $PASS passed, $FAIL failed"
 echo ""
 
+echo "ALL $((PASS+FAIL)) TESTS: $PASS PASS, $FAIL FAIL"
 if [[ "$FAIL" -eq 0 ]]; then
   echo "PASS — Phase 7.1b consensus dispatch is healthy."
   exit 0

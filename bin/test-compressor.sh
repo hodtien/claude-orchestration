@@ -118,7 +118,7 @@ echo "    '[CONTENT COMPRESSED: N lines truncated]' when truncation occurred"
 echo ""
 
 # ── quick assertion: line ratio sanity ───────────────────────────────────────
-FAIL=0
+PASS=0; FAIL=0
 for pair in "0.3:light:0.2:0.4" "0.5:medium:0.4:0.6" "0.7:heavy:0.6:0.8"; do
   LEVEL="${pair%%:*}"
   rest="${pair#*:}"
@@ -134,6 +134,7 @@ for pair in "0.3:light:0.2:0.4" "0.5:medium:0.4:0.6" "0.7:heavy:0.6:0.8"; do
   IN_BAND=$(echo "$LINE_RATIO >= $LO && $LINE_RATIO <= $HI" | bc -l)
   if [[ "$IN_BAND" -eq 1 ]]; then
     printf "  ✓ %s: line ratio %s in [%s, %s]\n" "$LABEL" "$LINE_RATIO" "$LO" "$HI"
+    PASS=$((PASS + 1))
   else
     printf "  ✗ %s: line ratio %s OUT of [%s, %s]\n" "$LABEL" "$LINE_RATIO" "$LO" "$HI"
     FAIL=$((FAIL + 1))
@@ -141,6 +142,7 @@ for pair in "0.3:light:0.2:0.4" "0.5:medium:0.4:0.6" "0.7:heavy:0.6:0.8"; do
 done
 
 echo ""
+echo "ALL $((PASS+FAIL)) TESTS: $PASS PASS, $FAIL FAIL"
 if [[ "$FAIL" -eq 0 ]]; then
   echo "PASS — compressor behaves as expected on structured payload."
   exit 0

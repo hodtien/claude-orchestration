@@ -186,6 +186,7 @@ RC=0; bash "$HELPER" unknown_cmd 2>/dev/null || RC=$?
 echo
 
 # ── Summary ───────────────────────────────────────────────────────────────────
+echo "ALL $TOTAL TESTS: $PASS PASS, $FAIL FAIL"
 echo "============================================================"
 if [ $FAIL -eq 0 ]; then
   echo "  ALL $TOTAL TESTS PASSED"
