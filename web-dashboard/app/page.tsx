@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   isRunning,
   isTerminal,
@@ -8,6 +8,7 @@ import {
   type TaskEvent,
   type TasksPayload
 } from "@/lib/types";
+import TraceDrawer from "./TraceDrawer";
 
 function pillClass(t: TaskEvent): string {
   if (isTerminal(t)) {
@@ -42,8 +43,11 @@ export default function Page() {
   const [cost, setCost] = useState<CostPayload | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [lastTick, setLastTick] = useState<string>("");
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const failuresRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const closeDrawer = useCallback(() => setSelectedTaskId(null), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -156,7 +160,19 @@ export default function Page() {
               {recent.map((r, i) => (
                 <tr key={`${r.task_id}-${i}`}>
                   <td>{fmtTs(r.ts || r.timestamp)}</td>
-                  <td>{r.task_id || "—"}</td>
+                  <td>
+                    {r.task_id ? (
+                      <button
+                        type="button"
+                        className="task-link"
+                        onClick={() => setSelectedTaskId(r.task_id!)}
+                      >
+                        {r.task_id}
+                      </button>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                   <td>{r.agent || "—"}</td>
                   <td>
                     <span className={pillClass(r)}>
@@ -204,6 +220,10 @@ export default function Page() {
           </table>
         )}
       </section>
+
+      {selectedTaskId && (
+        <TraceDrawer taskId={selectedTaskId} onClose={closeDrawer} />
+      )}
     </main>
   );
 }
