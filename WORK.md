@@ -105,10 +105,11 @@ Recommended dispatch order: **10.1 + 10.2 parallel → 10.3 → 10.4**. Keep eac
   - **Why now:** Observability exists, but it is fragmented across budget/react/context/learn/metrics/trace commands.
   - **Acceptance:** One dashboard command gives PM-ready health in <2s; test verifies all expected subcommands are listed in help; MCP inventory matches server tool registrations.
 
-- [ ] `10.5` Dead-code and deprecated surface audit (P3)
-  - **Scope:** Audit `lib/` and `bin/deprecated/`; classify active, dormant-but-planned, deprecated, and removable. Only remove code with zero runtime references and clear replacement.
-  - **Why now:** `task-dispatch.sh` is ~2.4k lines and `lib/` has several dormant modules; cleanup lowers future routing mistakes.
-  - **Acceptance:** Produce a deletion/keep list in `WORK.md`; move safe removals to `lib/deprecated/` or delete if already archived; run full verification runner after cleanup.
+- [x] `10.5` Dead-code and deprecated surface audit (P3) ✅ DONE 2026-04-26 — 38 active, 2 dormant-planned, 22 deprecated/archive, 3 removable. Removed from active surface: `lib/discarded-alternatives.sh`, `lib/style-memory.sh`, `lib/provenance-tracker.sh` → moved to `bin/deprecated/` with deprecation headers. All tests pass.
+  - **Active (38):** All `lib/` modules sourced by task-dispatch/agent/selfheal/MCP/tests kept. All `bin/_dashboard/` subcommands active. `bin/orch-report.sh` active (called by `.github/workflows/orch-report.yml`).
+  - **Dormant-planned (2):** `lib/cross-project.sh` (trigger: second project adopts orchestration), `lib/speculation-buffer.sh` (trigger: concurrent file-editing agents).
+  - **Deprecated/archive (22):** All existing `bin/deprecated/` scripts. Also `lib/sprint-queue.sh` (old parallel-sprint feature spec, no active runtime caller, PHASE5_IDEAS marked deprecated).
+  - **Removable (3):** `lib/discarded-alternatives.sh`, `lib/style-memory.sh`, `lib/provenance-tracker.sh` — all had zero active references (callers were already deprecated); moved to `bin/deprecated/` with `# DEPRECATED 2026-04-26` headers.
 
 **Phase 10 Success Criteria:** one-command test confidence, one integration proof of the dispatch pipeline, config errors caught before runtime, one PM-level dashboard view, and a smaller trusted active surface.
 

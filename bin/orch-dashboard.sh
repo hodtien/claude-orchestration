@@ -8,15 +8,16 @@ cmd="${1:-}"
 shift || true
 
 case "$cmd" in
-  cost)    source "$SCRIPT_DIR/_dashboard/cost.sh" "$@" ;;
-  metrics) source "$SCRIPT_DIR/_dashboard/metrics.sh" "$@" ;;
-  slo)     source "$SCRIPT_DIR/_dashboard/slo.sh" "$@" ;;
-  report)  source "$SCRIPT_DIR/_dashboard/report.sh" "$@" ;;
-  db)      source "$SCRIPT_DIR/_dashboard/db.sh" "$@" ;;
-  budget)  source "$SCRIPT_DIR/_dashboard/budget.sh" "$@" ;;
-  learn)   source "$SCRIPT_DIR/_dashboard/learn.sh" "$@" ;;
-  react)   source "$SCRIPT_DIR/_dashboard/react.sh" "$@" ;;
-  context) source "$SCRIPT_DIR/_dashboard/context.sh" "$@" ;;
+  cost)           source "$SCRIPT_DIR/_dashboard/cost.sh" "$@" ;;
+  metrics)        source "$SCRIPT_DIR/_dashboard/metrics.sh" "$@" ;;
+  slo)            source "$SCRIPT_DIR/_dashboard/slo.sh" "$@" ;;
+  report)         source "$SCRIPT_DIR/_dashboard/report.sh" "$@" ;;
+  db)             source "$SCRIPT_DIR/_dashboard/db.sh" "$@" ;;
+  budget)         source "$SCRIPT_DIR/_dashboard/budget.sh" "$@" ;;
+  learn)          source "$SCRIPT_DIR/_dashboard/learn.sh" "$@" ;;
+  react)          source "$SCRIPT_DIR/_dashboard/react.sh" "$@" ;;
+  context)        source "$SCRIPT_DIR/_dashboard/context.sh" "$@" ;;
+  status|overview) source "$SCRIPT_DIR/_dashboard/status.sh" "$@" ;;
   ""|help|--help|-h)
     cat <<EOF
 orch-dashboard.sh — unified dashboard
@@ -31,12 +32,14 @@ Subcommands:
   learn     Learning-engine stats: records, agent distribution, routing rules. Flags: --json --task-type --batch
   react     Show ReAct observe/think/act traces. Flags: --json --task-id <id>
   context   Show session context briefs for task pipelines. Flags: --json --task-id <id>
+  status    Unified health overview (alias: overview). Flags: --json
 
 Examples:
   orch-dashboard.sh cost --since 24h
   orch-dashboard.sh metrics --agent gemini --json
   orch-dashboard.sh db import
   orch-dashboard.sh report --open
+  orch-dashboard.sh status --json
 EOF
     ;;
   *)
