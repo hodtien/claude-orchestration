@@ -464,6 +464,24 @@ function runGetReactTrace(taskId) {
   }
 }
 
+function runGetSessionContext(taskId) {
+  const libPath = join(PROJECT_ROOT, "lib", "session-context.sh");
+  if (!existsSync(libPath)) return { error: "lib/session-context.sh not found" };
+  if (!taskId) return { error: "task_id is required" };
+  if (!/^[A-Za-z0-9._-]+$/.test(taskId)) return { error: "invalid task_id" };
+  try {
+    const result = spawnSync("bash", [libPath, "load", taskId], {
+      encoding: "utf8",
+      timeout: 10000,
+      env: { ...process.env, PROJECT_ROOT },
+    });
+    if (result.status === 0 && result.stdout) return JSON.parse(result.stdout);
+    return { error: (result.stderr || "session context load failed").slice(0, 500) };
+  } catch (e) {
+    return { error: String(e).slice(0, 500) };
+  }
+}
+
 // ── decompose preview helper (Phase 9.1) ────────────────────────────────────
 function runDecomposePreview(taskSpec, taskId) {
   const helperPath = join(PROJECT_ROOT, "lib", "task-decomposer.sh");
@@ -632,6 +650,17 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ["task_id"],
       },
     },
+    {
+      name: "get_session_context",
+      description: "Get the session context brief for a task in a depends_on pipeline.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          task_id: { type: "string", description: "Task ID to inspect" },
+        },
+        required: ["task_id"],
+      },
+    },
   ],
 }));
 
@@ -682,6 +711,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       break;
     case "get_react_trace":
       result = runGetReactTrace(args?.task_id || "");
+      break;
+    case "get_session_context":
+      result = runGetSessionContext(args?.task_id || "");
       break;
     default:
       return {

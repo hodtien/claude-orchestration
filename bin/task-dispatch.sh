@@ -71,6 +71,16 @@ else
     react_record_trace() { return 0; }
     react_select_next_agent() { return 0; }
 fi
+# shellcheck source=../lib/session-context.sh
+if [ -f "$SCRIPT_DIR/../lib/session-context.sh" ]; then
+    . "$SCRIPT_DIR/../lib/session-context.sh"
+else
+    session_ctx_enabled() { echo "false"; }
+    build_session_brief() { echo '{}'; }
+    save_session_context() { return 0; }
+    load_session_context() { echo '{}'; }
+    inject_session_brief() { echo "$2"; }
+fi
 BATCH_DIR="${1:?Usage: task-dispatch.sh <batch-dir> [--parallel|--status]}"
 MODE="${2:---sequential}"
 # Always retry skipped/failed tasks — no flag needed
@@ -106,6 +116,8 @@ REACT_MODE="${REACT_MODE:-false}"
 REACT_MAX_TURNS="${REACT_MAX_TURNS:-3}"
 REACT_QUALITY_THRESHOLD="${REACT_QUALITY_THRESHOLD:-0.7}"
 REACT_TRACE_DIR="${REACT_TRACE_DIR:-$ORCH_DIR/react-traces}"
+SESSION_CONTEXT="${SESSION_CONTEXT:-false}"
+SESSION_CTX_DIR="${SESSION_CTX_DIR:-$ORCH_DIR/session-context}"
 
 SHUTDOWN_IN_PROGRESS=false
 
@@ -1653,6 +1665,18 @@ $(cat "$ctx_file")
       fi
     done
     if [ -n "$ctx_block" ]; then
+      local session_enabled="false"
+      session_enabled=$(session_ctx_enabled "$spec" 2>/dev/null || echo "false")
+      if [ "$session_enabled" = "true" ] && [ -n "$ctx_tasks" ]; then
+        local session_brief brief_text
+        session_brief=$(build_session_brief "$tid" "$ctx_tasks" "$RESULTS_DIR" 2>/dev/null || echo '{}')
+        save_session_context "$tid" "$session_brief" 2>/dev/null || true
+        brief_text=$(python3 -c "import json,sys; print(json.loads(sys.argv[1]).get('brief',''))" "$session_brief" 2>/dev/null || echo "")
+        if [ -n "$brief_text" ]; then
+          prompt=$(inject_session_brief "$session_brief" "$prompt" 2>/dev/null || echo "$prompt")
+          echo "[dispatch] session brief injected for $tid ($(printf '%s' "$brief_text" | wc -c | tr -d ' ')B)"
+        fi
+      fi
       prompt="${ctx_block}${prompt}"
     fi
   fi
