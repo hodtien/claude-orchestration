@@ -168,6 +168,13 @@ export default function BatchDagPanel({ onSelectTask }: Props) {
           >
             {b.batch_id}
             <span className="batch-pill-count">{b.task_count}</span>
+            {b.state_counts && (b.state_counts.failed > 0 || b.state_counts.running > 0 || b.state_counts.succeeded > 0) && (
+              <span className="batch-pill-dots">
+                {b.state_counts.failed > 0 && <span className="batch-pill-dot dot-err" />}
+                {b.state_counts.running > 0 && <span className="batch-pill-dot dot-warn" />}
+                {b.state_counts.succeeded > 0 && <span className="batch-pill-dot dot-ok" />}
+              </span>
+            )}
           </button>
         ))}
       </div>

@@ -134,9 +134,10 @@ export default function FailuresPanel({ onSelectTask }: Props) {
               <th>task_id</th>
               <th>type</th>
               <th>state</th>
+              <th>batch</th>
               <th className="num">dur (s)</th>
               <th className="num">reflexion</th>
-              <th>last event</th>
+              <th>error</th>
             </tr>
           </thead>
           <tbody>
@@ -156,14 +157,26 @@ export default function FailuresPanel({ onSelectTask }: Props) {
                 <td>
                   <span className="pill err">{f.final_state}</span>
                 </td>
+                <td style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--text-dim)" }}>
+                  {f.batch_id ?? "—"}
+                </td>
                 <td className="num">
                   {f.duration_sec !== null ? f.duration_sec : "—"}
                 </td>
                 <td className="num">{f.reflexion_iterations}</td>
-                <td className="failure-evt">
-                  {f.last_event
-                    ? `${f.last_event.event ?? ""}  ${f.last_event.status ?? ""}`
-                    : "—"}
+                <td
+                  style={{
+                    fontFamily: "var(--mono)",
+                    fontSize: 11,
+                    color: "var(--text-dim)",
+                    maxWidth: 200,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap"
+                  }}
+                  title={f.error_summary ?? undefined}
+                >
+                  {f.error_summary ?? "—"}
                 </td>
               </tr>
             ))}

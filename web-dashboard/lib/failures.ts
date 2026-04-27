@@ -15,6 +15,8 @@ export type FailureRow = {
   candidates_tried: string[];
   successful_candidates: string[];
   markers: string[];
+  batch_id: string | null;
+  error_summary: string | null;
   last_event: {
     event: string | null;
     status: string | null;
@@ -122,6 +124,14 @@ export async function loadRecentFailures(
   const rows: FailureRow[] = trimmed.map((d) => {
     const tid = d.task_id ?? "";
     const lastEv = lastEventMap.get(tid);
+    const errSrc =
+      (d as { error?: string }).error ??
+      (d as { error_message?: string }).error_message ??
+      lastEv?.error ??
+      null;
+    const error_summary: string | null = errSrc
+      ? errSrc.slice(0, 80)
+      : null;
     return {
       task_id: tid,
       task_type: d.task_type ?? null,
@@ -134,6 +144,8 @@ export async function loadRecentFailures(
       candidates_tried: d.candidates_tried ?? [],
       successful_candidates: d.successful_candidates ?? [],
       markers: d.markers ?? [],
+      batch_id: lastEv?.batch_id ?? null,
+      error_summary,
       last_event: lastEv
         ? {
             event: lastEv.event ?? null,

@@ -6,7 +6,7 @@
     "dev": "next dev -p 3737",
     "build": "next build",
     "start": "next start -p 3737",
-    "lint": "next lint",
+    "lint": "eslint --config eslint.config.mjs app/ lib/",
     "test": "node --import tsx --test lib/*.test.ts"
   },
   "dependencies": {
@@ -15,9 +15,14 @@
     "react-dom": "18.3.1"
   },
   "devDependencies": {
+    "@eslint/eslintrc": "^3.3.5",
     "@types/node": "20.12.7",
     "@types/react": "18.3.3",
     "@types/react-dom": "18.3.0",
+    "@typescript-eslint/eslint-plugin": "^8.59.0",
+    "@typescript-eslint/parser": "^8.59.0",
+    "eslint": "^10.2.1",
+    "eslint-config-next": "^16.2.4",
     "tsx": "4.19.2",
     "typescript": "5.4.5"
   }

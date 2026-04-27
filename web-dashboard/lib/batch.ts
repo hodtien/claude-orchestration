@@ -23,6 +23,11 @@ export type BatchSummary = {
   batch_id: string;
   task_count: number;
   mtime_ms: number;
+  state_counts?: {
+    succeeded: number;
+    failed: number;
+    running: number;
+  };
 };
 
 export type BatchDag = {
@@ -35,7 +40,8 @@ export type BatchDag = {
 const NODE_CAP = 50;
 
 export async function listBatches(
-  tasksDir: string
+  tasksDir: string,
+  resultsDir?: string
 ): Promise<BatchSummary[]> {
   let entries: string[];
   try {
@@ -68,10 +74,31 @@ export async function listBatches(
     );
     if (taskFiles.length === 0) continue;
 
+    let stateCounts: BatchSummary["state_counts"] | undefined;
+    if (resultsDir) {
+      stateCounts = { succeeded: 0, failed: 0, running: 0 };
+      for (const tf of taskFiles) {
+        const base = tf.replace(/^task-/, "").replace(/\.md$/, "");
+        const statusPath = path.join(resultsDir, `${base}.status.json`);
+        try {
+          const raw = await fs.readFile(statusPath, "utf8");
+          const st = JSON.parse(raw) as { final_state?: string };
+          const s = (st.final_state ?? "").toLowerCase();
+          if (/(succ|complete|done)/.test(s)) stateCounts.succeeded++;
+          else if (/(fail|error|exhaust|cancel)/.test(s)) stateCounts.failed++;
+          else if (/(running|in_progress|start|attempt|dispatch)/.test(s))
+            stateCounts.running++;
+        } catch {
+          // skip
+        }
+      }
+    }
+
     out.push({
       batch_id: name,
       task_count: taskFiles.length,
-      mtime_ms: stat.mtimeMs
+      mtime_ms: stat.mtimeMs,
+      ...(stateCounts ? { state_counts: stateCounts } : {}),
     });
   }
 

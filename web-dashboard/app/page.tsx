@@ -124,7 +124,7 @@ export default function Page() {
           <div className="label">Recent tasks</div>
           <div className="value">{recent.length}</div>
         </div>
-        <div className="card">
+        <div className={`card${running > 0 ? " card-warn" : ""}`}>
           <div className="label">Running</div>
           <div className="value">{running}</div>
         </div>
@@ -132,7 +132,7 @@ export default function Page() {
           <div className="label">Succeeded</div>
           <div className="value">{succeeded}</div>
         </div>
-        <div className="card">
+        <div className={`card${failed > 0 ? " card-err" : ""}`}>
           <div className="label">Failed</div>
           <div className="value">{failed}</div>
         </div>
@@ -167,7 +167,10 @@ export default function Page() {
             </thead>
             <tbody>
               {recent.map((r, i) => (
-                <tr key={`${r.task_id}-${i}`}>
+                <tr
+                  key={`${r.task_id}-${i}`}
+                  className={isRunning(r, now) ? "row-running" : undefined}
+                >
                   <td>{fmtTs(r.ts || r.timestamp)}</td>
                   <td>
                     {r.task_id ? (

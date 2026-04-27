@@ -84,6 +84,22 @@ header.page .meta {
   margin-top: 4px;
 }
 
+.card.card-err {
+  background: color-mix(in oklch, var(--err) 12%, var(--surface));
+  border-color: color-mix(in oklch, var(--err) 45%, var(--border));
+}
+.card.card-err .value {
+  color: var(--err);
+}
+
+.card.card-warn {
+  background: color-mix(in oklch, var(--warn) 12%, var(--surface));
+  border-color: color-mix(in oklch, var(--warn) 45%, var(--border));
+}
+.card.card-warn .value {
+  color: var(--warn);
+}
+
 section.panel {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -416,6 +432,24 @@ th.num {
   border-color: color-mix(in oklch, var(--accent) 35%, var(--border));
 }
 
+.batch-pill-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 2px;
+}
+
+.batch-pill-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.batch-pill-dot.dot-err { background: var(--err); }
+.batch-pill-dot.dot-warn { background: var(--warn); }
+.batch-pill-dot.dot-ok { background: var(--ok); }
+
 .dag-scroll {
   overflow: auto;
   max-height: 520px;
@@ -629,4 +663,12 @@ th.num {
   width: 1px;
   background: var(--text-dim);
   opacity: 0.55;
+}
+
+tr.row-running {
+  background: color-mix(in oklch, var(--warn) 6%, transparent);
+  border-left: 2px solid color-mix(in oklch, var(--warn) 50%, var(--border));
+}
+tr.row-running td:first-child {
+  padding-left: 8px;
 }
