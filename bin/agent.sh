@@ -259,7 +259,7 @@ run_agent() {
     minimax-code|minimax|minimax_flash)
       run_router "minimax-code" > "$PARTIAL_OUTPUT_FILE" 2>&1
       ;;
-    oc-high|oc-medium|oc-low|claude-review|claude-review-backup|claude-architect|claude-architect-backup)
+    oc-high|oc-medium|oc-low|claude-review|claude-review-backup|claude-architect|claude-architect-backup|openclaude-gpt)
       run_claude_code "$AGENT" > "$PARTIAL_OUTPUT_FILE" 2>&1
       ;;
     cc/*)

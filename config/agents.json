@@ -97,6 +97,13 @@
       "capabilities": ["architecture", "system-design", "security-audit", "api-design", "deep-reasoning"],
       "channel": "router",
       "note": "Failover for claude-architect"
+    },
+    "openclaude-gpt": {
+      "cost_tier": 3,
+      "cost_per_1k_tokens": 0.003,
+      "capabilities": ["code-review", "security-audit", "ui-ux", "reasoning"],
+      "channel": "router",
+      "note": "GPT-class model served via router"
     }
   }
 }

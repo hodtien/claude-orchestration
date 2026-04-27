@@ -12,6 +12,7 @@ channels:
     - claude-architect
     - claude-review-backup
     - claude-architect-backup
+    - openclaude-gpt
   gemini_cli:
     binary: gemini
     prefix: ''
@@ -138,6 +139,16 @@ models:
     - deep-reasoning
     cost_hint: medium-high
     note: Failover for claude-architect (same tier, different upstream account/quota).
+  openclaude-gpt:
+    channel: router
+    tier: premium
+    strengths:
+    - code-review
+    - security-audit
+    - ui-ux
+    - reasoning
+    cost_hint: medium
+    note: GPT-class model served via router (port 20128). Used in security_audit parallel and ui_ux_review.
 task_mapping:
   quick_answer:
     mode: interactive
