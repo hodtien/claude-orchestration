@@ -10,6 +10,7 @@ import {
   deriveStates,
   listBatches,
   loadBatchSpecs,
+  getBatchDag,
   type ParsedSpec
 } from "./batch.js";
 
@@ -180,6 +181,22 @@ describe("deriveStates", () => {
     assert.equal(child.state, "blocked");
   });
 
+  test("transitive blocked: A failed → B blocked → C blocked", () => {
+    const specs = [
+      spec("a"),
+      spec("b", ["a"]),
+      spec("c", ["b"])
+    ];
+    const statusByTask = new Map<string, string | undefined>([
+      ["a", "failed"]
+    ]);
+    const eventsByTask = new Map<string, never[]>();
+    const nodes = deriveStates(specs, statusByTask, eventsByTask);
+    assert.equal(nodes.find((n) => n.id === "a")!.state, "failed");
+    assert.equal(nodes.find((n) => n.id === "b")!.state, "blocked");
+    assert.equal(nodes.find((n) => n.id === "c")!.state, "blocked");
+  });
+
   test("pending when no status and no events", () => {
     const specs = [spec("t1")];
     const statusByTask = new Map<string, string | undefined>();
@@ -228,6 +245,83 @@ describe("listBatches", () => {
   test("returns empty for missing dir", async () => {
     const result = await listBatches("/tmp/nonexistent-batch-dir-xyz");
     assert.deepEqual(result, []);
+  });
+
+  test("respects limit parameter", async () => {
+    const tmp = await tmpDir();
+    for (let i = 0; i < 5; i++) {
+      const d = path.join(tmp, `batch-${i}`);
+      await fs.mkdir(d);
+      await fs.writeFile(path.join(d, `task-${i}.md`), `---\nid: t${i}\n---\n`);
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    const result = await listBatches(tmp, undefined, 2);
+    assert.equal(result.length, 2);
+    assert.equal(result[0].batch_id, "batch-4");
+    assert.equal(result[1].batch_id, "batch-3");
+  });
+});
+
+// ── getBatchDag ────────────────────────────────────────────────
+
+describe("getBatchDag", () => {
+  test("returns null for nonexistent batch", async () => {
+    const tmp = await tmpDir();
+    const tasksFile = path.join(tmp, "tasks.jsonl");
+    await fs.writeFile(tasksFile, "");
+    const dag = await getBatchDag(tmp, tmp, tasksFile, "missing");
+    assert.equal(dag, null);
+  });
+
+  test("rejects unsafe batch id", async () => {
+    const tmp = await tmpDir();
+    const tasksFile = path.join(tmp, "tasks.jsonl");
+    await fs.writeFile(tasksFile, "");
+    const dag = await getBatchDag(tmp, tmp, tasksFile, "../etc");
+    assert.equal(dag, null);
+  });
+
+  test("loads dag with nodes, edges, and states", async () => {
+    const tmp = await tmpDir();
+    const batchDir = path.join(tmp, "tasks", "my-batch");
+    const resultsDir = path.join(tmp, "results");
+    await fs.mkdir(batchDir, { recursive: true });
+    await fs.mkdir(resultsDir, { recursive: true });
+
+    await fs.writeFile(
+      path.join(batchDir, "task-impl.md"),
+      "---\nid: impl-001\nagent: oc-medium\n---\nBody."
+    );
+    await fs.writeFile(
+      path.join(batchDir, "task-test.md"),
+      "---\nid: test-001\ndepends_on: [impl-001]\n---\nBody."
+    );
+
+    await fs.writeFile(
+      path.join(resultsDir, "impl-001.status.json"),
+      JSON.stringify({ schema_version: 1, final_state: "succeeded" })
+    );
+
+    const tasksFile = path.join(tmp, "tasks.jsonl");
+    await fs.writeFile(tasksFile, "");
+
+    const dag = await getBatchDag(
+      path.join(tmp, "tasks"),
+      resultsDir,
+      tasksFile,
+      "my-batch"
+    );
+    assert.ok(dag);
+    assert.equal(dag.batch_id, "my-batch");
+    assert.equal(dag.tasks.length, 2);
+    assert.equal(dag.cycle, null);
+    assert.equal(dag.total_task_count, 2);
+
+    const impl = dag.tasks.find((n) => n.id === "impl-001")!;
+    const tst = dag.tasks.find((n) => n.id === "test-001")!;
+    assert.equal(impl.state, "succeeded");
+    assert.equal(tst.state, "pending");
+    assert.deepEqual(tst.depends_on, ["impl-001"]);
   });
 });
 

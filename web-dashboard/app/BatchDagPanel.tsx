@@ -12,9 +12,12 @@ type Layer = BatchTaskNode[][];
 function layerize(nodes: BatchTaskNode[]): Layer {
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const depth = new Map<string, number>();
+  const visiting = new Set<string>();
 
   function getDepth(id: string): number {
     if (depth.has(id)) return depth.get(id)!;
+    if (visiting.has(id)) return 0;
+    visiting.add(id);
     const node = byId.get(id);
     if (!node || node.depends_on.length === 0) {
       depth.set(id, 0);
@@ -185,7 +188,7 @@ export default function BatchDagPanel({ onSelectTask }: Props) {
         <>
           {dag.cycle && (
             <div className="dag-cycle-banner">
-              Cycle detected: {dag.cycle.join(" → ")}
+              Cycle detected: {dag.cycle.join(" → ")} — graph hidden until resolved
             </div>
           )}
           {dag.truncated && (
@@ -193,9 +196,10 @@ export default function BatchDagPanel({ onSelectTask }: Props) {
               className="dag-cycle-banner"
               style={{ borderColor: "var(--warn)" }}
             >
-              Showing first 50 of {dag.tasks.length}+ nodes
+              Showing first {dag.tasks.length} of {dag.total_task_count} nodes
             </div>
           )}
+          {!dag.cycle && (
           <div className="dag-scroll">
             <svg
               className="dag-svg"
@@ -271,6 +275,7 @@ export default function BatchDagPanel({ onSelectTask }: Props) {
               })}
             </svg>
           </div>
+          )}
         </>
       )}
     </section>

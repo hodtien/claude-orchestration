@@ -5,6 +5,6 @@ import { listBatches } from "@/lib/batch";
 export const dynamic = "force-dynamic";
 
 export async function GET(): Promise<NextResponse> {
-  const batches = await listBatches(TASKS_DIR, RESULTS_DIR);
-  return NextResponse.json({ batches: batches.slice(0, 20) });
+  const batches = await listBatches(TASKS_DIR, RESULTS_DIR, 20);
+  return NextResponse.json({ batches });
 }
