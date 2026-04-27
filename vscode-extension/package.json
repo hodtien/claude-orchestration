@@ -1,0 +1,88 @@
+{
+  "name": "claude-orchestration",
+  "displayName": "Claude Orchestration",
+  "description": "Multi-agent orchestration dashboard for Claude — batch inbox, cost dashboard, and dispatch UI",
+  "version": "0.1.0",
+  "publisher": "hodtien",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": [
+    "onView:orchInbox",
+    "onView:orchCost",
+    "onView:orchDispatch"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "claude-orchestration",
+          "title": "Claude Orchestration",
+          "icon": "$(beaker)"
+        }
+      ]
+    },
+    "views": {
+      "claude-orchestration": [
+        {
+          "type": "webview",
+          "id": "orchInbox",
+          "name": "Batch Inbox"
+        },
+        {
+          "type": "webview",
+          "id": "orchCost",
+          "name": "Cost Dashboard"
+        },
+        {
+          "type": "webview",
+          "id": "orchDispatch",
+          "name": "Dispatch"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "claude-orch.refreshInbox",
+        "title": "Orchestration: Refresh Inbox"
+      },
+      {
+        "command": "claude-orch.dispatch",
+        "title": "Orchestration: Run /dispatch"
+      },
+      {
+        "command": "claude-orch.showStatus",
+        "title": "Orchestration: Show Status"
+      }
+    ],
+    "configuration": {
+      "title": "Claude Orchestration",
+      "properties": {
+        "claudeOrch.projectRoot": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the claude-orchestration project root (auto-detected from workspace)"
+        },
+        "claudeOrch.refreshIntervalMs": {
+          "type": "number",
+          "default": 10000,
+          "description": "Auto-refresh interval for inbox and cost panels (ms)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0",
+    "@vscode/vsce": "^2.24.0"
+  }
+}

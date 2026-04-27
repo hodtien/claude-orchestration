@@ -1970,6 +1970,12 @@ PYEOF
       learn_from_outcome "$BATCH_ID" "true" "$agent" "${task_type:-unknown}" \
         "$actual_duration" "0" "" 2>/dev/null || true
 
+      # 11.5 If this task was auto-redispatched, record fix success for confidence calibration
+      if [ -f "$RESULTS_DIR/${tid}.auto-redispatched" ] && type learn_from_fix &>/dev/null; then
+        learn_from_fix "$tid" "${task_type:-unknown}" "auto-redispatch" "true" \
+          "task succeeded after auto-redispatch" 2>/dev/null || true
+      fi
+
       return 0
     fi
 
@@ -2013,7 +2019,40 @@ PYEOF
   if [ "$FAILURE_MODE" != "fail-fast" ] && [ -x "$SCRIPT_DIR/task-selfheal.sh" ]; then
     selfheal_result=$("$SCRIPT_DIR/task-selfheal.sh" "$tid" "$BATCH_ID" "$BATCH_DIR" 2>/dev/null || echo "abort")
     case "$selfheal_result" in
-      retry-modified) echo "[dispatch] 🔄 Self-healing: retry-modified" ;;
+      retry-modified)
+        echo "[dispatch] 🔄 Self-healing: retry-modified"
+        # 11.5 Auto-redispatch: learning engine suggests spec fix
+        if type suggest_spec_fix &>/dev/null; then
+          _sh_dlq_err="$ORCH_DIR/dlq/${tid}.error.log"
+          _sh_dlq_spec="$ORCH_DIR/dlq/${tid}.spec.md"
+          _sh_fix_json=$(suggest_spec_fix "$tid" "$_sh_dlq_err" "$_sh_dlq_spec" 2>/dev/null || echo '{"confidence":0}')
+          _sh_confidence=$(python3 -c "import json,sys; print(json.loads(sys.argv[1]).get('confidence',0))" "$_sh_fix_json" 2>/dev/null || echo "0")
+          _sh_fix_type=$(python3 -c "import json,sys; print(json.loads(sys.argv[1]).get('fix_type','unknown'))" "$_sh_fix_json" 2>/dev/null || echo "unknown")
+          echo "[dispatch] 🧠 Learning engine: confidence=$_sh_confidence fix_type=$_sh_fix_type"
+          # Auto-redispatch if confidence > 0.7 and no prior auto-redispatch for this tid
+          if python3 -c "import sys; sys.exit(0 if float(sys.argv[1])>0.7 else 1)" "$_sh_confidence" 2>/dev/null; then
+            if [ ! -f "$RESULTS_DIR/${tid}.auto-redispatched" ]; then
+              _sh_patched=$(python3 -c "import json,sys; print(json.loads(sys.argv[1]).get('patched_spec',''))" "$_sh_fix_json" 2>/dev/null || echo "")
+              if [ -n "$_sh_patched" ] && [ -n "$spec" ] && [ -f "$spec" ]; then
+                echo "$_sh_patched" > "$spec"
+                : > "$RESULTS_DIR/${tid}.auto-redispatched"
+                echo "[dispatch] ✅ Auto-redispatch: spec patched, retrying inline (confidence=$_sh_confidence)"
+                _sh_payload=$(python3 -c "import json,sys; print(json.dumps({'task_id':sys.argv[1],'batch_id':sys.argv[2],'confidence':float(sys.argv[3]),'fix_type':sys.argv[4]}))" "$tid" "${BATCH_ID:-}" "$_sh_confidence" "$_sh_fix_type" 2>/dev/null || echo '{}')
+                notify_event "selfheal_redispatch" "$_sh_payload" || true
+                # Inline retry: recursively dispatch the patched spec.
+                # Marker file prevents infinite loops — second failure escalates above.
+                if dispatch_task_first_success "$spec"; then
+                  return 0
+                fi
+            else
+              echo "[dispatch] ⚠️  Already auto-redispatched $tid once — escalating"
+              # Record fix failure for confidence calibration
+              _sh_tt=$(python3 -c "import json,sys; print(json.loads(sys.argv[1]).get('task_type','unknown'))" "$_sh_fix_json" 2>/dev/null || echo "unknown")
+              learn_from_fix "$tid" "$_sh_tt" "$_sh_fix_type" "false" "second failure after auto-redispatch" 2>/dev/null || true
+            fi
+          fi
+        fi
+        ;;
       skip-dependents) echo "[dispatch] 🔄 Self-healing: skipped dependents" ;;
       abort) echo "[dispatch] 🔄 Self-healing: aborting"; batch_abort=true ;;
       *) echo "[dispatch] 🔄 Self-healing: $selfheal_result" ;;
