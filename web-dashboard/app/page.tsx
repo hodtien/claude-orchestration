@@ -11,6 +11,7 @@ import {
 import TraceDrawer from "./TraceDrawer";
 import BatchDagPanel from "./BatchDagPanel";
 import FailuresPanel from "./FailuresPanel";
+import CostTrendPanel from "./CostTrendPanel";
 
 function pillClass(t: TaskEvent): string {
   if (isTerminal(t)) {
@@ -144,6 +145,8 @@ export default function Page() {
       <BatchDagPanel onSelectTask={setSelectedTaskId} />
 
       <FailuresPanel onSelectTask={setSelectedTaskId} />
+
+      <CostTrendPanel />
 
       <section className="panel">
         <h2>Recent tasks</h2>
