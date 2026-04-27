@@ -3,16 +3,19 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3737",
+    "dev": "next dev -p 3737 -H 127.0.0.1",
     "build": "next build",
     "start": "next start -p 3737",
     "lint": "eslint --config eslint.config.mjs app/ lib/",
-    "test": "node --import tsx --test lib/*.test.ts"
+    "test": "node --import tsx --import ./lib/test-setup.ts --test lib/*.test.ts",
+    "test:types": "tsc --noEmit"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.90.0",
     "next": "14.2.35",
     "react": "18.3.1",
-    "react-dom": "18.3.1"
+    "react-dom": "18.3.1",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.5",

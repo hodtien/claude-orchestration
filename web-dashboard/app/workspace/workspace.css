@@ -1,0 +1,255 @@
+.workspace {
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.back-link {
+  text-decoration: none;
+  opacity: 0.6;
+}
+.back-link:hover {
+  opacity: 1;
+}
+
+.idea-composer {
+  margin: 1rem 0 1.5rem;
+  padding: 1rem;
+  background: oklch(14% 0.01 250);
+  border-radius: 8px;
+  border: 1px solid oklch(22% 0.01 250);
+}
+.idea-input {
+  width: 100%;
+  min-height: 3.5rem;
+  resize: vertical;
+  background: oklch(10% 0.01 250);
+  color: var(--text);
+  border: 1px solid oklch(26% 0.01 250);
+  border-radius: 6px;
+  padding: 0.75rem;
+  font: inherit;
+  font-size: 0.95rem;
+}
+.idea-input:focus {
+  outline: 2px solid oklch(60% 0.15 250);
+  outline-offset: -1px;
+}
+.composer-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 0.75rem;
+}
+.composer-error {
+  color: var(--err);
+  font-size: 0.85rem;
+}
+
+.ws-layout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 1.5rem;
+  min-height: 60vh;
+}
+@media (max-width: 768px) {
+  .ws-layout {
+    grid-template-columns: 1fr;
+  }
+}
+.ws-sidebar h2 {
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  margin-bottom: 0.5rem;
+}
+
+.pipeline-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pipeline-item {
+  all: unset;
+  cursor: pointer;
+  display: block;
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border-radius: 6px;
+  background: oklch(14% 0.01 250);
+  border: 1px solid transparent;
+  transition: background 150ms, border-color 150ms;
+}
+.pipeline-item:hover {
+  background: oklch(18% 0.01 250);
+}
+.pipeline-item.active {
+  border-color: oklch(50% 0.12 250);
+  background: oklch(16% 0.02 250);
+}
+.pipeline-idea {
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: var(--text);
+}
+.pipeline-meta {
+  margin-top: 0.25rem;
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: 0.75rem;
+}
+.stage-badge {
+  background: oklch(22% 0.01 250);
+  padding: 0.1em 0.5em;
+  border-radius: 4px;
+  color: var(--text-dim);
+}
+
+.pipeline-timeline {
+  min-height: 300px;
+}
+.pipeline-header {
+  margin-bottom: 1.25rem;
+}
+.pipeline-id-line {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+.batch-badge {
+  background: oklch(22% 0.02 200);
+  padding: 0.1em 0.5em;
+  border-radius: 4px;
+  font-size: 0.75rem;
+}
+.pipeline-raw {
+  margin-top: 0.5rem;
+  color: var(--text);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.stage-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.stage-card {
+  background: oklch(14% 0.01 250);
+  border: 1px solid oklch(22% 0.01 250);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  transition: border-color 200ms;
+}
+.stage-card.current {
+  border-color: oklch(50% 0.12 250);
+}
+.stage-card.done {
+  border-left: 3px solid var(--ok);
+}
+.stage-card.failed {
+  border-left: 3px solid var(--err);
+}
+.stage-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.stage-title {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.stage-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  background: oklch(22% 0.01 250);
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+.stage-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.stage-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.8rem;
+}
+.btn-primary {
+  background: oklch(50% 0.15 250);
+  color: #fff;
+  border: none;
+  padding: 0.4em 1em;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: background 150ms;
+}
+.btn-primary:hover:not(:disabled) {
+  background: oklch(55% 0.17 250);
+}
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn-sm {
+  padding: 0.25em 0.65em;
+  font-size: 0.8rem;
+}
+.btn-ghost {
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid oklch(28% 0.01 250);
+  padding: 0.25em 0.65em;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+  transition: background 150ms;
+}
+.btn-ghost:hover {
+  background: oklch(18% 0.01 250);
+}
+
+.stage-body {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid oklch(22% 0.01 250);
+}
+.stage-output,
+.stage-error {
+  max-height: 400px;
+  overflow: auto;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 0.75rem;
+  border-radius: 6px;
+}
+.stage-output {
+  background: oklch(10% 0.01 250);
+  color: var(--text);
+}
+.stage-error {
+  background: oklch(14% 0.04 25);
+  color: var(--err);
+}
