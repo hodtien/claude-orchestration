@@ -26,6 +26,13 @@ export async function POST(
     );
   }
 
+  if (pipeline.stages.dispatch.status === "running") {
+    return NextResponse.json(
+      { success: false, error: "dispatch is already running" },
+      { status: 409 }
+    );
+  }
+
   await updateStage(id, "dispatch", {
     status: "running",
     startedAt: Date.now()
@@ -35,12 +42,13 @@ export async function POST(
     const batchDir = path.join(TASKS_DIR, pipeline.batchId);
     const { pid } = spawnDetached(
       "bin/task-dispatch.sh",
-      [batchDir, "--parallel"],
-      { AUTO_DECOMPOSE: "true" }
+      [batchDir, "--parallel"]
     );
 
     await updatePipelineField(id, { dispatchPid: pid });
     const next = await updateStage(id, "dispatch", {
+      status: "done",
+      endedAt: Date.now(),
       output: `PID: ${pid} · Batch: ${pipeline.batchId}`
     });
     return NextResponse.json({ success: true, data: next });

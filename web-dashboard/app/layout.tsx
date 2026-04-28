@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./nav.css";
+import { ModelConfigProvider } from "../lib/use-model-config";
+import Sidebar from "../components/Sidebar";
 
 export const metadata: Metadata = {
   title: "Claude Orchestration",
@@ -13,7 +16,14 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <ModelConfigProvider>
+          <div className="layout-wrapper">
+            <Sidebar />
+            <div className="main-content">{children}</div>
+          </div>
+        </ModelConfigProvider>
+      </body>
     </html>
   );
 }

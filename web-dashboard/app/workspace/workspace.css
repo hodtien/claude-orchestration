@@ -253,3 +253,208 @@
   background: oklch(14% 0.04 25);
   color: var(--err);
 }
+
+.stage-note {
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px dashed oklch(22% 0.01 250);
+}
+.stage-note-input {
+  width: 100%;
+  min-height: 2.5rem;
+  resize: vertical;
+  background: oklch(10% 0.01 250);
+  color: var(--text);
+  border: 1px solid oklch(26% 0.01 250);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  font: inherit;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+.stage-note-input:focus {
+  outline: 2px solid oklch(55% 0.12 200);
+  outline-offset: -1px;
+}
+.stage-note-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 0.4rem;
+}
+.stage-note-msg {
+  font-size: 0.75rem;
+}
+
+.stage-rerun-prompt {
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: oklch(18% 0.04 200);
+  border: 1px solid oklch(35% 0.08 200);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.8rem;
+  color: oklch(80% 0.06 200);
+}
+.stage-rerun-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.model-select {
+  background: oklch(12% 0.01 250);
+  color: var(--text);
+  border: 1px solid oklch(28% 0.01 250);
+  border-radius: 4px;
+  padding: 0.2em 0.4em;
+  font: inherit;
+  font-size: 0.75rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  cursor: pointer;
+  transition: border-color 150ms;
+}
+.model-select:hover:not(:disabled) {
+  border-color: oklch(40% 0.08 250);
+}
+.model-select:focus {
+  outline: 2px solid oklch(55% 0.12 250);
+  outline-offset: -1px;
+}
+.model-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.model-badge {
+  background: oklch(20% 0.03 280);
+  color: oklch(78% 0.08 280);
+  padding: 0.1em 0.5em;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.02em;
+}
+.phase-badge {
+  background: oklch(22% 0.04 200);
+  color: oklch(80% 0.08 200);
+  padding: 0.1em 0.5em;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+}
+.voice-badges {
+  display: inline-flex;
+  gap: 0.3rem;
+  align-items: center;
+}
+.voice-badge {
+  padding: 0.1em 0.5em;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+  transition: background 150ms, color 150ms, border-color 150ms;
+}
+.voice-pending {
+  background: oklch(18% 0.01 250);
+  color: var(--text-dim);
+  border-color: oklch(24% 0.01 250);
+}
+.voice-running {
+  background: oklch(22% 0.06 60);
+  color: oklch(82% 0.1 80);
+  border-color: oklch(40% 0.1 70);
+  animation: voicePulse 1.4s ease-in-out infinite;
+}
+.voice-done {
+  background: oklch(22% 0.08 150);
+  color: oklch(82% 0.12 150);
+  border-color: oklch(40% 0.12 150);
+}
+@keyframes voicePulse {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 1; }
+}
+.dispatch-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.dispatch-counts {
+  font-size: 0.8rem;
+  line-height: 1.6;
+  padding: 0.5rem 0.75rem;
+  background: oklch(10% 0.01 250);
+  border-radius: 6px;
+}
+.dispatch-counts strong {
+  font-variant-numeric: tabular-nums;
+}
+.dispatch-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.dispatch-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  background: oklch(12% 0.01 250);
+  transition: background 200ms;
+}
+.dispatch-icon {
+  width: 1.2em;
+  text-align: center;
+  flex-shrink: 0;
+}
+.dispatch-id {
+  font-size: 0.75rem;
+}
+.dispatch-done {
+  color: var(--ok);
+}
+.dispatch-failed {
+  color: var(--err);
+}
+.dispatch-running {
+  color: oklch(82% 0.1 80);
+  animation: voicePulse 1.4s ease-in-out infinite;
+}
+.dispatch-pending {
+  color: var(--text-dim);
+}
+
+.stage-streaming {
+  border: 1px solid oklch(35% 0.1 250);
+  animation: streamPulse 1.6s ease-in-out infinite;
+}
+@keyframes streamPulse {
+  0%, 100% {
+    border-color: oklch(35% 0.1 250);
+  }
+  50% {
+    border-color: oklch(55% 0.15 250);
+  }
+}
+.stream-caret {
+  display: inline-block;
+  margin-left: 2px;
+  color: oklch(70% 0.15 250);
+  animation: caretBlink 1s steps(2, start) infinite;
+}
+@keyframes caretBlink {
+  to {
+    visibility: hidden;
+  }
+}

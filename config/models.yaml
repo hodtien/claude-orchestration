@@ -4,15 +4,15 @@ channels:
     auth_env: ANTHROPIC_API_KEY
     prefix: cc/
     also_serves:
-    - minimax-code
-    - oc-high
-    - oc-medium
-    - oc-low
-    - claude-review
-    - claude-architect
-    - claude-review-backup
-    - claude-architect-backup
-    - openclaude-gpt
+      - minimax-code
+      - oc-high
+      - oc-medium
+      - oc-low
+      - claude-review
+      - claude-architect
+      - claude-review-backup
+      - claude-architect-backup
+      - openclaude-gpt
   gemini_cli:
     binary: gemini
     prefix: ''
@@ -40,18 +40,18 @@ models:
     channel: router
     tier: cheap
     strengths:
-    - code
-    - draft
-    - fast
+      - code
+      - draft
+      - fast
     cost_hint: medium-low
   gh/gpt-5.3-codex:
     channel: copilot_cli
     tier: code-review
     strengths:
-    - code
-    - code-review
-    - ui-ux
-    - repo-aware
+      - code
+      - code-review
+      - ui-ux
+      - repo-aware
     cost_hint: medium
   gh/claude-haiku-4-5:
     channel: copilot_cli
@@ -61,8 +61,8 @@ models:
     channel: gemini_cli
     tier: analysis
     strengths:
-    - long-context
-    - 1M-tokens
+      - long-context
+      - 1M-tokens
     cost_hint: medium
   gemini-flash:
     channel: gemini_cli
@@ -72,81 +72,81 @@ models:
     channel: router
     tier: premium
     strengths:
-    - architecture
-    - system-design
-    - requirements
-    - deep-reasoning
+      - architecture
+      - system-design
+      - requirements
+      - deep-reasoning
     cost_hint: medium-high
     note: Maps to gemini-2.5-pro in gemini-cli config
   oc-medium:
     channel: router
     tier: medium
-    strengths:
-    - code
-    - refactor
-    - review
-    - tests
-    - implementation
     cost_hint: medium-low
-    note: Maps to gemini-2.5-flash or configurable in gemini-cli
+    strengths:
+      - code
+      - refactor
+      - review
+      - tests
+      - implementation
+    note: Maps to Openclaude (sonnet, gpt5.5) or Minimax (Minimax M2.7)
   oc-low:
     channel: router
     tier: fast
     strengths:
-    - quick-answer
-    - summarize
-    - classify
+      - quick-answer
+      - summarize
+      - classify
     cost_hint: low
     note: Maps to fastest available in gemini-cli
   claude-review:
     channel: router
     tier: code-review
     strengths:
-    - code
-    - code-review
-    - refactor
-    - repo-aware
+      - code
+      - code-review
+      - refactor
+      - repo-aware
     cost_hint: medium
     note: Primary reviewer slot in consensus code_review / refactor / fix_bug / write_tests.
   claude-review-backup:
     channel: router
     tier: code-review
     strengths:
-    - code
-    - code-review
-    - refactor
+      - code
+      - code-review
+      - refactor
     cost_hint: medium
     note: Failover for claude-review (same tier, different upstream account/quota).
   claude-architect:
     channel: router
     tier: premium
+    cost_hint: very-high
     strengths:
-    - architecture
-    - system-design
-    - security-audit
-    - api-design
-    - deep-reasoning
-    cost_hint: medium-high
+      - architecture
+      - system-design
+      - security-audit
+      - api-design
+      - deep-reasoning
     note: Primary architect slot — replaces gemini-pro in heavy reasoning / design / security tasks.
   claude-architect-backup:
     channel: router
     tier: premium
+    cost_hint: very-high
     strengths:
-    - architecture
-    - system-design
-    - security-audit
-    - api-design
-    - deep-reasoning
-    cost_hint: medium-high
+      - architecture
+      - system-design
+      - security-audit
+      - api-design
+      - deep-reasoning
     note: Failover for claude-architect (same tier, different upstream account/quota).
   openclaude-gpt:
     channel: router
     tier: premium
     strengths:
-    - code-review
-    - security-audit
-    - ui-ux
-    - reasoning
+      - code-review
+      - security-audit
+      - ui-ux
+      - reasoning
     cost_hint: medium
     note: GPT-class model served via router (port 20128). Used in security_audit parallel and ui_ux_review.
 task_mapping:
@@ -154,201 +154,191 @@ task_mapping:
     mode: interactive
     interactive_agent: general-purpose
     parallel:
-    - oc-low
-    - minimax-code
+      - oc-low
+      - minimax-code
     fallback:
-    - cc/claude-haiku-4-5
+      - cc/claude-haiku-4-5
     rationale: oc-low handles fast classification; minimax as backup.
   summarize:
     mode: interactive
     interactive_agent: general-purpose
     parallel:
-    - oc-low
-    - minimax-code
+      - oc-low
+      - minimax-code
     fallback:
-    - cc/claude-haiku-4-5
+      - cc/claude-haiku-4-5
     note: minimax-code is last-resort backup for all task types
   classify_intent:
     mode: interactive
     interactive_agent: general-purpose
     parallel:
-    - oc-low
-    - minimax-code
+      - oc-low
+      - minimax-code
     fallback:
-    - cc/claude-haiku-4-5
+      - cc/claude-haiku-4-5
   implement_feature:
     mode: auto
     interactive_agent: general-purpose
     parallel:
-    - oc-medium
-    - gh/gpt-5.3-codex
-    - minimax-code
+      - oc-medium
+      - gh/gpt-5.3-codex
+      - minimax-code
     fallback:
-    - cc/claude-sonnet-4-6
-    - cc/claude-opus-4-6
-    rationale: oc-medium for coding; copilot for repo context; Claude premium
-      as safety net; minimax-code as last resort.
+      - cc/claude-sonnet-4-6
+      - cc/claude-opus-4-6
+    rationale: oc-medium for coding; copilot for repo context; Claude premium as safety net; minimax-code as last resort.
   fix_bug:
     mode: auto
     interactive_agent: general-purpose
     parallel:
-    - oc-medium
-    - gh/gpt-5.3-codex
-    - minimax-code
+      - oc-medium
+      - gh/gpt-5.3-codex
+      - minimax-code
     fallback:
-    - cc/claude-sonnet-4-6
-    - cc/claude-opus-4-6
+      - cc/claude-sonnet-4-6
+      - cc/claude-opus-4-6
   refactor_code:
     mode: auto
     interactive_agent: code-simplifier
     parallel:
-    - oc-medium
-    - gh/gpt-5.3-codex
-    - minimax-code
+      - oc-medium
+      - gh/gpt-5.3-codex
+      - minimax-code
     fallback:
-    - cc/claude-sonnet-4-6
-    - cc/claude-opus-4-6
+      - cc/claude-sonnet-4-6
+      - cc/claude-opus-4-6
   write_tests:
     mode: auto
     interactive_agent: tdd-guide
     parallel:
-    - oc-medium
-    - gh/gpt-5.3-codex
-    - minimax-code
+      - oc-medium
+      - gh/gpt-5.3-codex
+      - minimax-code
     fallback:
-    - cc/claude-sonnet-4-5
-    - cc/claude-sonnet-4-6
-    rationale: oc-medium handles test generation; copilot for repo-aware tests;
-      minimax-code last resort.
+      - cc/claude-sonnet-4-5
+      - cc/claude-sonnet-4-6
+    rationale: oc-medium handles test generation; copilot for repo-aware tests; minimax-code last resort.
   code_review:
     mode: async
     consensus: true
     parallel:
-    - claude-review
-    - claude-review-backup
+      - claude-review
+      - claude-review-backup
     fallback:
-    - oc-medium
-    - minimax-code
-    rationale: claude-review + backup as primary/secondary reviewers; oc-medium fallback;
-      minimax-code last resort.
+      - oc-medium
+      - minimax-code
+    rationale: claude-review + backup as primary/secondary reviewers; oc-medium fallback; minimax-code last resort.
   ui_ux_review:
     mode: auto
     interactive_agent: general-purpose
     parallel:
-    - claude-review
-    - gh/gpt-5.3-codex
-    - minimax-code
+      - claude-review
+      - gh/gpt-5.3-codex
+      - minimax-code
     fallback:
-    - claude-review-backup
-    - cc/claude-sonnet-4-6
+      - claude-review-backup
+      - cc/claude-sonnet-4-6
   architecture_analysis:
     mode: async
     interactive_agent: architect
     consensus: true
     parallel:
-    - claude-architect
+      - claude-architect
     fallback:
-    - claude-architect-backup
-    - oc-high
-    - minimax-code
-    rationale: claude-architect + backup for deep reasoning; oc-high as lighter fallback;
-      minimax-code last resort.
+      - claude-architect-backup
+      - oc-high
+      - minimax-code
+    rationale: claude-architect + backup for deep reasoning; oc-high as lighter fallback; minimax-code last resort.
   security_audit:
     mode: async
     interactive_agent: security-reviewer
     consensus: true
     parallel:
-    - claude-review
-    - openclaude-gpt
+      - claude-review
+      - openclaude-gpt
     fallback:
-    - oc-medium
-    - minimax-code
-    rationale: claude-review + openclaude-gpt for security analysis; oc-medium as fallback;
-      minimax-code last resort.
+      - oc-medium
+      - minimax-code
+    rationale: claude-review + openclaude-gpt for security analysis; oc-medium as fallback; minimax-code last resort.
   analyze_requirements:
     mode: auto
     interactive_agent: planner
     parallel:
-    - oc-high
-    - minimax-code
+      - oc-high
+      - minimax-code
     fallback:
-    - cc/claude-sonnet-4-6
-    - cc/claude-opus-4-6
-    - claude-architect
-    rationale: oc-high for requirements analysis (lighter than claude-architect);
-      claude-architect as premium fallback; minimax-code last resort.
+      - cc/claude-sonnet-4-6
+      - cc/claude-opus-4-6
+      - claude-architect
+    rationale: oc-high for requirements analysis (lighter than claude-architect); claude-architect as premium fallback; minimax-code last resort.
   create_user_stories:
     mode: auto
     interactive_agent: planner
     parallel:
-    - oc-high
-    - minimax-code
+      - oc-high
+      - minimax-code
     fallback:
-    - cc/claude-sonnet-4-6
-    - claude-architect
+      - cc/claude-sonnet-4-6
+      - claude-architect
   design_api:
     mode: async
     interactive_agent: architect
     consensus: true
     parallel:
-    - claude-architect
-    - cc/claude-sonnet-4-6
-    - minimax-code
+      - claude-architect
+      - cc/claude-sonnet-4-6
+      - minimax-code
     fallback:
-    - claude-architect-backup
-    - cc/claude-opus-4-6
-    rationale: claude-architect for API design; Claude Sonnet as parallel option;
-      minimax-code as backup. claude-architect-backup failover if primary rate-limited.
+      - claude-architect-backup
+      - cc/claude-opus-4-6
+    rationale: claude-architect for API design; Claude Sonnet as parallel option; minimax-code as backup. claude-architect-backup failover if primary rate-limited.
   system_design:
     mode: auto
     interactive_agent: architect
     parallel:
-    - claude-architect
+      - claude-architect
     fallback:
-    - claude-architect-backup
-    - minimax-code
+      - claude-architect-backup
+      - minimax-code
     rationale: claude-architect primary; backup fallback; minimax-code last resort.
   write_dockerfile:
     mode: auto
     interactive_agent: general-purpose
     parallel:
-    - oc-medium
-    - cc/claude-sonnet-4-5
-    - minimax-code
+      - oc-medium
+      - cc/claude-sonnet-4-5
+      - minimax-code
     fallback:
-    - cc/claude-sonnet-4-6
+      - cc/claude-sonnet-4-6
   setup_ci_cd:
     mode: auto
     interactive_agent: general-purpose
     parallel:
-    - oc-medium
-    - cc/claude-sonnet-4-6
-    - minimax-code
+      - oc-medium
+      - cc/claude-sonnet-4-6
+      - minimax-code
     fallback:
-    - cc/claude-sonnet-4-5
+      - cc/claude-sonnet-4-5
   repo_analysis:
     mode: async
     interactive_agent: code-explorer
     parallel:
-    - claude-architect
-    - minimax-code
+      - claude-architect
+      - minimax-code
     fallback:
-    - claude-architect-backup
-    - cc/claude-opus-4-6
-    - cc/claude-sonnet-4-6
-    rationale: claude-architect for whole-repo analysis; claude-architect-backup
-      failover; Claude Opus premium fallback; minimax-code last resort. NOTE
-      context window ≠ gemini-pro 1M — if routed workload truly needs 1M tokens,
-      use gemini-pro directly via route_task.
+      - claude-architect-backup
+      - cc/claude-opus-4-6
+      - cc/claude-sonnet-4-6
+    rationale: claude-architect for whole-repo analysis; claude-architect-backup failover; Claude Opus premium fallback; minimax-code last resort. NOTE context window ≠ gemini-pro 1M — if routed workload truly needs 1M tokens, use gemini-pro directly via route_task.
   default:
     mode: auto
     interactive_agent: general-purpose
     parallel:
-    - oc-low
-    - minimax-code
+      - oc-low
+      - minimax-code
     fallback:
-    - cc/claude-haiku-4-5
-    - cc/claude-sonnet-4-5
+      - cc/claude-haiku-4-5
+      - cc/claude-sonnet-4-5
 parallel_policy:
   pick_strategy: consensus
   max_parallel: 3

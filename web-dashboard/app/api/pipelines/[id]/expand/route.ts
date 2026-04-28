@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { loadPipeline, updateStage } from "@/lib/pipeline";
 import {
-  getClient,
-  DEFAULT_MODEL,
+  createMessageWithRetry,
   MAX_TOKENS,
-  EXPAND_SYSTEM
+  EXPAND_SYSTEM,
+  resolveModel
 } from "@/lib/anthropic-client";
 
 export const dynamic = "force-dynamic";
@@ -23,15 +23,26 @@ export async function POST(
     );
   }
 
+  if (pipeline.stages.expand.status === "running") {
+    return NextResponse.json(
+      { success: false, error: "expand is already running" },
+      { status: 409 }
+    );
+  }
+
   await updateStage(id, "expand", { status: "running", startedAt: Date.now() });
 
   try {
-    const client = getClient();
-    const msg = await client.messages.create({
-      model: DEFAULT_MODEL,
+    const ideaNote = pipeline.stages.idea.userNote?.trim();
+    const userContent = ideaNote
+      ? `${pipeline.rawIdea}\n\n---\n\nUser clarification / refinement:\n${ideaNote}`
+      : pipeline.rawIdea;
+    const model = await resolveModel(null);
+    const msg = await createMessageWithRetry({
+      model,
       max_tokens: MAX_TOKENS,
       system: EXPAND_SYSTEM,
-      messages: [{ role: "user", content: pipeline.rawIdea }]
+      messages: [{ role: "user", content: userContent }]
     });
     const text = msg.content
       .flatMap((b) => (b.type === "text" ? [b.text] : []))

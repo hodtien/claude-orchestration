@@ -114,18 +114,7 @@ export default function Page() {
     <main>
       <header className="page">
         <h1>
-          Claude Orchestration · Live{" "}
-          <a
-            href="/workspace"
-            style={{
-              fontSize: "0.55em",
-              fontWeight: 400,
-              marginLeft: "0.75rem",
-              opacity: 0.7
-            }}
-          >
-            → Workspace
-          </a>
+          Claude Orchestration · Live
         </h1>
         <div className="meta">
           {err ? `error: ${err}` : `tick ${lastTick || "…"}`}

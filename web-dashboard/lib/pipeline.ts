@@ -20,7 +20,9 @@ export const stageRecordSchema = z.object({
   startedAt: z.number().int().optional(),
   endedAt: z.number().int().optional(),
   output: z.string().optional(),
-  error: z.string().optional()
+  error: z.string().optional(),
+  userNote: z.string().optional(),
+  model: z.string().optional()
 });
 
 export type StageRecord = z.infer<typeof stageRecordSchema>;
@@ -58,7 +60,8 @@ async function withLock<T>(id: string, fn: () => Promise<T>): Promise<T> {
       if (locks.get(id) === next) locks.delete(id);
     }
   );
-  locks.set(id, cleanup);
+  locks.set(id, next);
+  void cleanup;
   return next;
 }
 
@@ -138,11 +141,19 @@ export async function updateStage(
   return withLock(id, async () => {
     const current = await loadPipeline(id);
     if (!current) throw new Error(`pipeline not found: ${id}`);
+    const merged = { ...current.stages[stage], ...patch };
+    if (patch.status && patch.status !== "failed" && !patch.error) {
+      delete merged.error;
+    }
+    if (patch.status === "running" && patch.endedAt === undefined) {
+      delete merged.endedAt;
+      delete merged.output;
+    }
     const next: Pipeline = {
       ...current,
       stages: {
         ...current.stages,
-        [stage]: { ...current.stages[stage], ...patch }
+        [stage]: merged
       },
       currentStage: stage,
       updatedAt: Date.now()

@@ -58,12 +58,7 @@ export default function WorkspacePage() {
   return (
     <main className="workspace">
       <header className="page">
-        <h1>
-          <a href="/" className="back-link">
-            ←
-          </a>{" "}
-          Idea Workspace
-        </h1>
+        <h1>Idea Workspace</h1>
         <div className="meta">
           {err ? `error: ${err}` : `${pipelines.length} pipelines`}
         </div>

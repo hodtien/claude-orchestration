@@ -4,9 +4,10 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 function isTerminal(p: Pipeline): boolean {
-  const last = p.stages.review;
-  if (last.status === "done" || last.status === "failed") return true;
-  return STAGES.every((s) => {
+  if (p.stages.dispatch.status === "failed") return true;
+  if (p.stages.review.status === "done" || p.stages.review.status === "failed")
+    return true;
+  return STAGES.filter((s) => s !== "review").every((s) => {
     const st = p.stages[s].status;
     return st === "done" || st === "failed";
   });

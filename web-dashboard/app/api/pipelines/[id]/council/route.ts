@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { loadPipeline, updateStage } from "@/lib/pipeline";
 import {
-  getClient,
-  DEFAULT_MODEL,
+  createMessageWithRetry,
   MAX_TOKENS,
-  COUNCIL_PROMPTS
+  COUNCIL_PROMPTS,
+  resolveModel
 } from "@/lib/anthropic-client";
 
 export const dynamic = "force-dynamic";
@@ -13,14 +13,16 @@ export const revalidate = 0;
 async function callVoice(
   voice: keyof typeof COUNCIL_PROMPTS,
   expandedSpec: string,
-  priorVoices?: string
+  priorVoices?: string,
+  userNote?: string
 ): Promise<string> {
-  const client = getClient();
-  const userContent = priorVoices
-    ? `Spec under review:\n\n${expandedSpec}\n\n---\n\nCouncil feedback so far:\n\n${priorVoices}`
-    : `Spec under review:\n\n${expandedSpec}`;
-  const msg = await client.messages.create({
-    model: DEFAULT_MODEL,
+  const parts = [`Spec under review:\n\n${expandedSpec}`];
+  if (priorVoices) parts.push(`Council feedback so far:\n\n${priorVoices}`);
+  if (userNote) parts.push(`User guidance for this round:\n${userNote}`);
+  const userContent = parts.join("\n\n---\n\n");
+  const resolved = await resolveModel(null);
+  const msg = await createMessageWithRetry({
+    model: resolved,
     max_tokens: MAX_TOKENS,
     system: COUNCIL_PROMPTS[voice],
     messages: [{ role: "user", content: userContent }]
@@ -50,16 +52,25 @@ export async function POST(
     );
   }
 
+  if (pipeline.stages.council.status === "running") {
+    return NextResponse.json(
+      { success: false, error: "council is already running" },
+      { status: 409 }
+    );
+  }
+
   await updateStage(id, "council", { status: "running", startedAt: Date.now() });
 
   try {
+    const expandNote = pipeline.stages.expand.userNote?.trim() || undefined;
+    const councilNote = pipeline.stages.council.userNote?.trim() || undefined;
     const [skeptic, pragmatist, critic] = await Promise.all([
-      callVoice("skeptic", expanded),
-      callVoice("pragmatist", expanded),
-      callVoice("critic", expanded)
+      callVoice("skeptic", expanded, undefined, expandNote),
+      callVoice("pragmatist", expanded, undefined, expandNote),
+      callVoice("critic", expanded, undefined, expandNote)
     ]);
     const priorBlock = `### Skeptic\n${skeptic}\n\n### Pragmatist\n${pragmatist}\n\n### Critic\n${critic}`;
-    const architect = await callVoice("architect", expanded, priorBlock);
+    const architect = await callVoice("architect", expanded, priorBlock, councilNote);
 
     const output = [
       "## Skeptic",
