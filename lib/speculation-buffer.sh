@@ -3,12 +3,21 @@
 # Agents publish provisional state; conflict detector promotes valid or triggers re-execution.
 
 # NOTE: Do NOT use set -e in this file. This lib is SOURCEd by callers that manage their own error handling.
+# NOTE: No mkdir at load time — dirs are created lazily by _ensure_spec_dir.
+# NOTE: No jq dependency — all JSON via python3 stdlib.
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SPECDIR="${SPECDIR:-$HOME/.claude/orchestration/speculation}"
+# Guard against double-sourcing
+[ -n "${_SPECULATION_BUFFER_LOADED:-}" ] && return 0
+_SPECULATION_BUFFER_LOADED=1
+
+_SB_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)"
+ORCH_DIR="${ORCH_DIR:-$_SB_SCRIPT_DIR/../.orchestration}"
+SPECDIR="${SPECDIR:-$ORCH_DIR/speculation}"
 MAX_SPECS="${MAX_SPECS:-100}"
 
-mkdir -p "$SPECDIR"
+_ensure_spec_dir() {
+    mkdir -p "$SPECDIR"
+}
 
 # Record a speculation
 speculate_publish() {
@@ -19,34 +28,48 @@ speculate_publish() {
     shift 4
     local dependencies=("$@")
 
+    _ensure_spec_dir
+
     local spec_file="$SPECDIR/${batch_id}-${agent_id}-${state_key//\//_}.json"
 
-    # Check max specs
     local spec_count
-    spec_count=$(find "$SPECDIR" -name "*.json" -type f | wc -l | tr -d ' ')
+    spec_count=$(find "$SPECDIR" -name "*.json" -type f 2>/dev/null | wc -l | tr -d ' ')
     if [ "$spec_count" -ge "$MAX_SPECS" ]; then
         echo "[speculation] WARN: max specs reached ($MAX_SPECS), skipping $state_key" >&2
         return 1
     fi
 
-    # Build dependencies JSON
-    local deps_json="[]"
+    local deps_payload=""
     if [ ${#dependencies[@]} -gt 0 ]; then
-        deps_json=$(printf '%s\n' "${dependencies[@]}" | jq -R . | jq -s .)
+        deps_payload=$(printf '%s\n' "${dependencies[@]}")
     fi
 
-    # Write speculation
-    cat > "$spec_file" <<EOF
-{
-  "agent_id": "$agent_id",
-  "batch_id": "$batch_id",
-  "state_key": "$state_key",
-  "provisional_value": "$provisional_value",
-  "dependencies": $deps_json,
-  "created_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "status": "provisional"
+    AGENT_ID="$agent_id" \
+    BATCH_ID="$batch_id" \
+    STATE_KEY="$state_key" \
+    PROV_VALUE="$provisional_value" \
+    SPEC_FILE="$spec_file" \
+    python3 -c "
+import json, os, sys
+from datetime import datetime, timezone
+
+deps_raw = sys.stdin.read().strip()
+deps = [d for d in deps_raw.split('\n') if d] if deps_raw else []
+
+data = {
+    'agent_id': os.environ['AGENT_ID'],
+    'batch_id': os.environ['BATCH_ID'],
+    'state_key': os.environ['STATE_KEY'],
+    'provisional_value': os.environ['PROV_VALUE'],
+    'dependencies': deps,
+    'created_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+    'status': 'provisional'
 }
-EOF
+
+with open(os.environ['SPEC_FILE'], 'w') as f:
+    json.dump(data, f, indent=2)
+    f.write('\n')
+" <<< "$deps_payload"
     echo "[speculation] published: $state_key by $agent_id"
 }
 
@@ -55,13 +78,22 @@ speculate_list() {
     local batch_id="${1:?batch_id required}"
     local status_filter="${2:-}"
 
+    [ -d "$SPECDIR" ] || return 0
+
     find "$SPECDIR" -name "${batch_id}-*.json" -type f 2>/dev/null | while read -r spec_file; do
-        if [ -n "$status_filter" ]; then
-            local status
-            status=$(jq -r '.status' "$spec_file" 2>/dev/null || echo "unknown")
-            [ "$status" != "$status_filter" ] && continue
-        fi
-        jq '.' "$spec_file" 2>/dev/null || cat "$spec_file"
+        STATUS_FILTER="$status_filter" SPEC_FILE="$spec_file" python3 -c "
+import json, os, sys
+spec_file = os.environ['SPEC_FILE']
+status_filter = os.environ.get('STATUS_FILTER', '')
+try:
+    with open(spec_file) as f:
+        data = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError):
+    sys.exit(0)
+if status_filter and data.get('status') != status_filter:
+    sys.exit(0)
+print(json.dumps(data, indent=2))
+"
     done
 }
 
@@ -72,8 +104,17 @@ speculate_promote() {
         echo "[speculation] WARN: spec not found: $spec_file" >&2
         return 1
     fi
-    jq '.status = "confirmed"' "$spec_file" > "${spec_file}.tmp" && mv "${spec_file}.tmp" "$spec_file"
-    echo "[speculation] promoted: $(jq -r '.state_key' "$spec_file")"
+    SPEC_FILE="$spec_file" python3 -c "
+import json, os
+spec_file = os.environ['SPEC_FILE']
+with open(spec_file) as f:
+    data = json.load(f)
+data['status'] = 'confirmed'
+with open(spec_file, 'w') as f:
+    json.dump(data, f, indent=2)
+    f.write('\n')
+print(data.get('state_key', ''))
+" | { read -r key; echo "[speculation] promoted: $key"; }
 }
 
 # Invalidate a speculation
@@ -83,8 +124,17 @@ speculate_invalidate() {
         echo "[speculation] WARN: spec not found: $spec_file" >&2
         return 1
     fi
-    jq '.status = "invalidated"' "$spec_file" > "${spec_file}.tmp" && mv "${spec_file}.tmp" "$spec_file"
-    echo "[speculation] invalidated: $(jq -r '.state_key' "$spec_file")"
+    SPEC_FILE="$spec_file" python3 -c "
+import json, os
+spec_file = os.environ['SPEC_FILE']
+with open(spec_file) as f:
+    data = json.load(f)
+data['status'] = 'invalidated'
+with open(spec_file, 'w') as f:
+    json.dump(data, f, indent=2)
+    f.write('\n')
+print(data.get('state_key', ''))
+" | { read -r key; echo "[speculation] invalidated: $key"; }
 }
 
 # Check if speculation is valid
@@ -92,17 +142,26 @@ speculation_is_valid() {
     local spec_file="$1"
     local actual_value="$2"
 
-    local prov_value
-    prov_value=$(jq -r '.provisional_value' "$spec_file" 2>/dev/null || echo "")
+    [ -f "$spec_file" ] || return 1
 
-    [ "$prov_value" == "$actual_value" ]
+    SPEC_FILE="$spec_file" ACTUAL="$actual_value" python3 -c "
+import json, os, sys
+try:
+    with open(os.environ['SPEC_FILE']) as f:
+        data = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError):
+    sys.exit(1)
+sys.exit(0 if data.get('provisional_value') == os.environ['ACTUAL'] else 1)
+"
 }
 
-# Main
-case "${1:-}" in
-    publish)    shift; speculate_publish "$@" ;;
-    list)      shift; speculate_list "$@" ;;
-    promote)   shift; speculate_promote "$@" ;;
-    invalidate) shift; speculate_invalidate "$@" ;;
-    *)         echo "Usage: $0 publish|list|promote|invalidate" >&2; exit 1 ;;
-esac
+# Main (only run if executed directly, not sourced)
+if [[ -n "${BASH_SOURCE[0]:-}" ]] && [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    case "${1:-}" in
+        publish)    shift; speculate_publish "$@" ;;
+        list)       shift; speculate_list "$@" ;;
+        promote)    shift; speculate_promote "$@" ;;
+        invalidate) shift; speculate_invalidate "$@" ;;
+        *)          echo "Usage: $0 publish|list|promote|invalidate" >&2; exit 1 ;;
+    esac
+fi

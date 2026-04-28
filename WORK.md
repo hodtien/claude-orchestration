@@ -140,8 +140,8 @@ Recommended dispatch order: **10.1 + 10.2 parallel → 10.3 → 10.4**. Keep eac
 
 _Audited 2026-04-26. Items below are trigger-based — not actionable until their trigger fires._
 
-- [ ] Cross-project orchestration — wire `lib/cross-project.sh` **Trigger:** second project adopts orchestration. Note: lib has source-time side effects (`mkdir -p`) and `jq`/`bc` deps; needs cleanup before wiring.
-- [ ] Speculation buffer — wire `lib/speculation-buffer.sh` **Trigger:** concurrent file-editing agents available. Note: lib has source-time `mkdir`, no BASH_SOURCE guard, `jq` dep; needs safety fixes before wiring.
+- [x] Cross-project orchestration — safety cleanup of `lib/cross-project.sh` ✅ DONE 2026-04-28. Source guard, lazy mkdir, python3 replacing jq/bc, SHARED_DIR overridable. 25 tests PASS. **Wiring still trigger-based** (second project adopts orchestration).
+- [x] Speculation buffer — safety cleanup of `lib/speculation-buffer.sh` ✅ DONE 2026-04-28. CRITICAL fix: BASH_SOURCE guard around main dispatch. Source guard, lazy mkdir, python3 replacing jq, SPECDIR relative to ORCH_DIR. 30 tests PASS. **Wiring still trigger-based** (concurrent file-editing agents).
 
 ---
 
