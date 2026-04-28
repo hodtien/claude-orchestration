@@ -31,6 +31,7 @@ export const pipelineSchema = z.object({
   id: z.string().regex(/^pipe-\d+-[a-z0-9]+$/),
   rawIdea: z.string().min(1),
   project: z.string().trim().min(1).max(80).optional(),
+  modelOverride: z.string().trim().min(1).max(80).optional(),
   currentStage: z.enum(STAGES),
   stages: z.object({
     idea: stageRecordSchema,
@@ -103,11 +104,13 @@ function newId(): string {
 
 export async function createPipeline(
   rawIdea: string,
-  project?: string
+  project?: string,
+  modelOverride?: string
 ): Promise<Pipeline> {
   const idea = rawIdea.trim();
   if (!idea) throw new Error("rawIdea required");
   const trimmedProject = project?.trim();
+  const trimmedModel = modelOverride?.trim();
 
   await ensureDir();
   const now = Date.now();
@@ -118,6 +121,7 @@ export async function createPipeline(
     id: newId(),
     rawIdea: idea,
     ...(trimmedProject ? { project: trimmedProject } : {}),
+    ...(trimmedModel ? { modelOverride: trimmedModel } : {}),
     currentStage: "idea",
     stages,
     createdAt: now,
@@ -172,14 +176,23 @@ export async function updateStage(
 
 export async function updatePipelineField(
   id: string,
-  patch: Partial<Pick<Pipeline, "batchId" | "dispatchPid" | "project">>
+  patch: Partial<Pick<Pipeline, "batchId" | "dispatchPid" | "project" | "modelOverride">>
 ): Promise<Pipeline> {
   return withLock(id, async () => {
     const current = await loadPipeline(id);
     if (!current) throw new Error(`pipeline not found: ${id}`);
+    const sanitized = { ...patch };
+    if ("project" in sanitized) {
+      const v = sanitized.project?.trim();
+      sanitized.project = v || undefined;
+    }
+    if ("modelOverride" in sanitized) {
+      const v = sanitized.modelOverride?.trim();
+      sanitized.modelOverride = v || undefined;
+    }
     const next: Pipeline = {
       ...current,
-      ...patch,
+      ...sanitized,
       updatedAt: Date.now()
     };
     pipelineSchema.parse(next);

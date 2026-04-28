@@ -54,6 +54,13 @@
   flex: 0 1 240px;
   margin: 0;
 }
+.composer-footer .composer-model {
+  flex: 0 1 220px;
+  margin: 0;
+}
+.composer-footer .composer-model .model-select {
+  width: 100%;
+}
 .composer-error {
   color: var(--err);
   font-size: 0.8rem;

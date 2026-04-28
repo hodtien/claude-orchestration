@@ -7,6 +7,12 @@ interface ProjectOption {
   name: string;
 }
 
+interface ModelOption {
+  id: string;
+  channel: string;
+  tier?: string;
+}
+
 interface IdeaComposerProps {
   onCreated: (id: string) => void;
 }
@@ -20,9 +26,11 @@ interface CreateResponse {
 export default function IdeaComposer({ onCreated }: IdeaComposerProps) {
   const [idea, setIdea] = useState("");
   const [project, setProject] = useState("");
+  const [modelOverride, setModelOverride] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [registeredProjects, setRegisteredProjects] = useState<ProjectOption[]>([]);
+  const [availableModels, setAvailableModels] = useState<ModelOption[]>([]);
 
   useEffect(() => {
     async function loadProjects() {
@@ -41,7 +49,29 @@ export default function IdeaComposer({ onCreated }: IdeaComposerProps) {
         // non-critical — dropdown just stays empty
       }
     }
+    async function loadModels() {
+      try {
+        const res = await fetch("/api/config/models", { cache: "no-store" });
+        const json = await res.json();
+        if (json.success && json.data?.models) {
+          const all = json.data.models as Array<{
+            id: string;
+            channel: string;
+            tier?: string;
+            inSettingsAllowlist: boolean;
+          }>;
+          setAvailableModels(
+            all
+              .filter((m) => m.inSettingsAllowlist && m.channel === "router")
+              .map((m) => ({ id: m.id, channel: m.channel, tier: m.tier }))
+          );
+        }
+      } catch {
+        // non-critical
+      }
+    }
     void loadProjects();
+    void loadModels();
 
     if (typeof BroadcastChannel === "undefined") return;
     const bc = new BroadcastChannel("config:projects");
@@ -63,7 +93,8 @@ export default function IdeaComposer({ onCreated }: IdeaComposerProps) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             rawIdea: trimmed,
-            ...(project ? { project } : {})
+            ...(project ? { project } : {}),
+            ...(modelOverride ? { modelOverride } : {})
           })
         });
         const body = (await res.json()) as CreateResponse;
@@ -72,6 +103,7 @@ export default function IdeaComposer({ onCreated }: IdeaComposerProps) {
         }
         setIdea("");
         setProject("");
+        setModelOverride("");
         if (body.data?.id) onCreated(body.data.id);
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : String(err));
@@ -79,7 +111,7 @@ export default function IdeaComposer({ onCreated }: IdeaComposerProps) {
         setSubmitting(false);
       }
     },
-    [idea, project, submitting, onCreated]
+    [idea, project, modelOverride, submitting, onCreated]
   );
 
   return (
@@ -104,6 +136,23 @@ export default function IdeaComposer({ onCreated }: IdeaComposerProps) {
             {registeredProjects.map((p) => (
               <option key={p.id} value={p.name}>
                 {p.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="composer-model">
+          <select
+            className="model-select"
+            value={modelOverride}
+            onChange={(e) => setModelOverride(e.target.value)}
+            disabled={submitting}
+            title="Model override (Auto = use task_mapping routing)"
+          >
+            <option value="">Auto (task routing)</option>
+            {availableModels.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.id}
+                {m.tier ? ` · ${m.tier}` : ""}
               </option>
             ))}
           </select>
