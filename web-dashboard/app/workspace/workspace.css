@@ -1,6 +1,10 @@
 .workspace {
   max-width: 1280px;
   margin: 0 auto;
+  --ws-accent: oklch(56% 0.15 250);
+  --ws-accent-glow: oklch(54% 0.14 250 / 0.22);
+  --ws-border: oklch(28% 0.015 250);
+  --ws-border-soft: oklch(22% 0.01 250);
 }
 
 .back-link {
@@ -13,10 +17,11 @@
 
 .idea-composer {
   margin: 1rem 0 1.5rem;
-  padding: 1rem;
-  background: oklch(14% 0.01 250);
-  border-radius: 8px;
-  border: 1px solid oklch(22% 0.01 250);
+  padding: 1.1rem 1.1rem 0.9rem;
+  background: linear-gradient(180deg, oklch(15% 0.012 250), oklch(13% 0.01 250));
+  border-radius: 12px;
+  border: 1px solid var(--ws-border);
+  box-shadow: 0 8px 24px oklch(2% 0 0 / 0.28);
 }
 .idea-input {
   width: 100%;
@@ -24,32 +29,41 @@
   resize: vertical;
   background: oklch(10% 0.01 250);
   color: var(--text);
-  border: 1px solid oklch(26% 0.01 250);
-  border-radius: 6px;
+  border: 1px solid var(--ws-border-soft);
+  border-radius: 8px;
   padding: 0.75rem;
   font: inherit;
   font-size: 0.95rem;
+  line-height: 1.45;
+  box-shadow: inset 0 1px 0 oklch(100% 0 0 / 0.03);
+  transition: border-color 140ms, box-shadow 140ms;
 }
 .idea-input:focus {
-  outline: 2px solid oklch(60% 0.15 250);
-  outline-offset: -1px;
+  outline: none;
+  border-color: var(--ws-accent);
+  box-shadow: 0 0 0 3px var(--ws-accent-glow);
 }
 .composer-footer {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
   align-items: center;
-  gap: 1rem;
-  margin-top: 0.75rem;
+  gap: 0.75rem;
+  margin-top: 0.7rem;
+}
+.composer-footer .composer-project {
+  flex: 0 1 240px;
+  margin: 0;
 }
 .composer-error {
   color: var(--err);
-  font-size: 0.85rem;
+  font-size: 0.8rem;
+  margin-right: auto;
 }
 
 .ws-layout {
   display: grid;
   grid-template-columns: 280px 1fr;
-  gap: 1.5rem;
+  gap: 1.25rem;
   min-height: 60vh;
 }
 @media (max-width: 768px) {
@@ -57,12 +71,60 @@
     grid-template-columns: 1fr;
   }
 }
+.ws-sidebar {
+  background: linear-gradient(180deg, oklch(13% 0.008 250), oklch(11% 0.006 250));
+  border: 1px solid var(--ws-border-soft);
+  border-radius: 12px;
+  padding: 0.85rem 0.75rem 1rem;
+}
+.ws-main {
+  background: oklch(11% 0.005 250);
+  border: 1px solid var(--ws-border-soft);
+  border-radius: 12px;
+  padding: 1.25rem;
+}
 .ws-sidebar h2 {
-  font-size: 0.9rem;
+  font-size: 0.78rem;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
+  color: oklch(78% 0.018 250);
+  margin: 0;
+  font-weight: 600;
+}
+.ws-sidebar-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  padding-bottom: 0.7rem;
+  margin-bottom: 0.7rem;
+  border-bottom: 1px solid var(--ws-border-soft);
+}
+
+/* Empty state — main + sidebar */
+.empty {
+  display: grid;
+  place-items: center;
+  text-align: center;
+  padding: 2.5rem 1.5rem;
   color: var(--text-dim);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+.ws-main .empty {
+  min-height: 320px;
+  background:
+    radial-gradient(400px 200px at 50% 30%, oklch(20% 0.03 250 / 0.35), transparent 70%),
+    transparent;
+  border-radius: 8px;
+}
+.ws-main .empty::before {
+  content: "✦";
+  display: block;
+  font-size: 1.8rem;
+  color: oklch(60% 0.12 250);
   margin-bottom: 0.5rem;
+  opacity: 0.7;
 }
 
 /* --- Project Groups --- */
@@ -143,18 +205,20 @@
   align-items: center;
 }
 .btn-mini {
-  padding: 0.15em 0.5em;
+  padding: 0.2em 0.6em;
   font-size: 0.72rem;
-  border-radius: 4px;
-  border: 1px solid oklch(28% 0.01 250);
-  background: oklch(18% 0.01 250);
-  color: var(--text-dim);
+  border-radius: 5px;
+  border: 1px solid var(--ws-border);
+  background: linear-gradient(180deg, oklch(20% 0.012 250), oklch(16% 0.01 250));
+  color: var(--text);
   cursor: pointer;
   font: inherit;
-  transition: background 120ms;
+  font-weight: 500;
+  transition: background 120ms, border-color 120ms;
 }
 .btn-mini:hover {
-  background: oklch(24% 0.01 250);
+  background: linear-gradient(180deg, oklch(24% 0.015 250), oklch(20% 0.012 250));
+  border-color: oklch(34% 0.02 250);
 }
 
 /* --- Composer Project Input --- */
@@ -180,6 +244,211 @@
   opacity: 0.7;
 }
 
+/* --- Workspace Dialogs (ProjectManager) --- */
+.ws-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: oklch(0% 0 0 / 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.ws-dialog {
+  background: oklch(12% 0.01 250);
+  border: 1px solid oklch(22% 0.01 250);
+  border-radius: 10px;
+  padding: 20px 24px;
+  min-width: 400px;
+  max-width: 520px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.ws-dialog-wide {
+  min-width: 480px;
+  max-width: 600px;
+}
+.ws-dialog h2 {
+  margin: 0 0 12px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.ws-dialog-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.ws-dialog-head h2 {
+  margin: 0;
+}
+.ws-dialog-error {
+  padding: 8px 12px;
+  background: oklch(68% 0.20 25 / 0.1);
+  border: 1px solid oklch(68% 0.20 25 / 0.3);
+  border-radius: 6px;
+  color: var(--err);
+  font-size: 0.8rem;
+  margin-bottom: 12px;
+}
+.ws-dialog-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+.ws-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+.ws-field {
+  margin-bottom: 12px;
+}
+.ws-field label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+.ws-field input {
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: oklch(10% 0.01 250);
+  color: var(--text);
+  border: 1px solid oklch(26% 0.01 250);
+  border-radius: 6px;
+  outline: none;
+  transition: border-color 120ms;
+}
+.ws-field input:focus {
+  border-color: oklch(55% 0.12 250);
+}
+.ws-path-row {
+  display: flex;
+  gap: 8px;
+}
+.ws-path-row input {
+  flex: 1;
+}
+.ws-browse-path {
+  font-size: 0.75rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text-dim);
+  margin-bottom: 10px;
+  word-break: break-all;
+}
+.ws-browse-nav {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.ws-browse-list {
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid oklch(22% 0.01 250);
+  border-radius: 6px;
+  background: oklch(10% 0.01 250);
+}
+.ws-browse-empty {
+  padding: 16px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+.ws-browse-entry {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 5px 12px;
+  font-size: 0.8rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: none;
+  border: none;
+  border-bottom: 1px solid oklch(18% 0.01 250);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 100ms;
+}
+.ws-browse-entry:hover {
+  background: oklch(18% 0.02 250);
+}
+
+/* Project manage list in dialog */
+.project-manage-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.project-manage-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid oklch(18% 0.01 250);
+}
+.project-manage-row:last-child {
+  border-bottom: none;
+}
+.project-manage-info {
+  min-width: 0;
+  flex: 1;
+}
+.project-manage-name {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text);
+}
+.project-manage-path {
+  font-size: 0.72rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-manage-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: 12px;
+  flex-shrink: 0;
+}
+.btn-mini-primary {
+  background: oklch(50% 0.15 250);
+  color: #fff;
+  border-color: oklch(50% 0.15 250);
+}
+.btn-mini-primary:hover:not(:disabled) {
+  background: oklch(55% 0.17 250);
+}
+.btn-mini-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn-mini-danger {
+  color: oklch(70% 0.18 25);
+  border-color: oklch(40% 0.12 25);
+}
+.btn-mini-danger:hover {
+  background: oklch(68% 0.20 25 / 0.1);
+}
+
+/* Sidebar project actions row */
+.sidebar-project-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+.btn-add-project,
+.btn-manage-projects {
+  font-size: 0.7rem;
+}
+
 .pipeline-list {
   list-style: none;
   padding: 0;
@@ -193,18 +462,22 @@
   cursor: pointer;
   display: block;
   width: 100%;
-  padding: 0.6rem 0.75rem;
-  border-radius: 6px;
-  background: oklch(14% 0.01 250);
-  border: 1px solid transparent;
-  transition: background 150ms, border-color 150ms;
+  padding: 0.65rem 0.8rem;
+  border-radius: 8px;
+  background: linear-gradient(180deg, oklch(15% 0.01 250), oklch(13% 0.008 250));
+  border: 1px solid var(--ws-border-soft);
+  box-shadow: inset 0 1px 0 oklch(100% 0 0 / 0.02);
+  transition: background 150ms, border-color 150ms, transform 150ms, box-shadow 150ms;
 }
 .pipeline-item:hover {
-  background: oklch(18% 0.01 250);
+  background: linear-gradient(180deg, oklch(18% 0.012 250), oklch(15% 0.01 250));
+  border-color: var(--ws-border);
+  transform: translateY(-1px);
 }
 .pipeline-item.active {
-  border-color: oklch(50% 0.12 250);
-  background: oklch(16% 0.02 250);
+  border-color: var(--ws-accent);
+  background: linear-gradient(180deg, oklch(18% 0.025 250), oklch(15% 0.02 250));
+  box-shadow: 0 0 0 1px var(--ws-accent-glow), inset 0 1px 0 oklch(100% 0 0 / 0.04);
 }
 .pipeline-idea {
   font-size: 0.85rem;
@@ -307,23 +580,34 @@
   font-size: 0.8rem;
 }
 .btn-primary {
-  background: oklch(50% 0.15 250);
+  background: linear-gradient(180deg, oklch(58% 0.16 250), oklch(50% 0.15 250));
   color: #fff;
-  border: none;
-  padding: 0.4em 1em;
-  border-radius: 6px;
+  border: 1px solid oklch(46% 0.14 250);
+  padding: 0.45em 1.1em;
+  border-radius: 8px;
   cursor: pointer;
   font: inherit;
   font-size: 0.85rem;
   font-weight: 600;
-  transition: background 150ms;
+  letter-spacing: 0.01em;
+  box-shadow:
+    0 1px 0 oklch(100% 0 0 / 0.08) inset,
+    0 4px 12px oklch(50% 0.15 250 / 0.25);
+  transition: background 150ms, box-shadow 150ms, transform 100ms;
 }
 .btn-primary:hover:not(:disabled) {
-  background: oklch(55% 0.17 250);
+  background: linear-gradient(180deg, oklch(62% 0.18 250), oklch(54% 0.17 250));
+  box-shadow:
+    0 1px 0 oklch(100% 0 0 / 0.1) inset,
+    0 6px 18px oklch(54% 0.17 250 / 0.35);
+}
+.btn-primary:active:not(:disabled) {
+  transform: translateY(1px);
 }
 .btn-primary:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
+  box-shadow: none;
 }
 .btn-sm {
   padding: 0.25em 0.65em;

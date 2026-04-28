@@ -92,22 +92,22 @@ export default function IdeaComposer({ onCreated }: IdeaComposerProps) {
         rows={3}
         disabled={submitting}
       />
-      <div className="composer-project">
-        <select
-          className="project-input"
-          value={project}
-          onChange={(e) => setProject(e.target.value)}
-          disabled={submitting}
-        >
-          <option value="">No project</option>
-          {registeredProjects.map((p) => (
-            <option key={p.id} value={p.name}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-      </div>
       <div className="composer-footer">
+        <div className="composer-project">
+          <select
+            className="project-input"
+            value={project}
+            onChange={(e) => setProject(e.target.value)}
+            disabled={submitting}
+          >
+            <option value="">No project</option>
+            {registeredProjects.map((p) => (
+              <option key={p.id} value={p.name}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </div>
         {error && <span className="composer-error">{error}</span>}
         <button
           type="submit"

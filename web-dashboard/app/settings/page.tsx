@@ -5,15 +5,13 @@ import "./settings.css";
 import { ModelsTab } from "./ModelsTab";
 import { RoutingTab } from "./RoutingTab";
 import { AgentsTab } from "./AgentsTab";
-import { ProjectsTab } from "./ProjectsTab";
 
-type Tab = "models" | "routing" | "agents" | "projects";
+type Tab = "models" | "routing" | "agents";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "models", label: "Models" },
   { id: "routing", label: "Routing" },
   { id: "agents", label: "Agents" },
-  { id: "projects", label: "Projects" },
 ];
 
 export default function SettingsPage() {
@@ -42,7 +40,6 @@ export default function SettingsPage() {
       {active === "models" && <ModelsTab />}
       {active === "routing" && <RoutingTab />}
       {active === "agents" && <AgentsTab />}
-      {active === "projects" && <ProjectsTab />}
     </div>
   );
 }

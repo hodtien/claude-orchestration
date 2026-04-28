@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import IdeaComposer from "./IdeaComposer";
 import PipelineTimeline from "./PipelineTimeline";
+import { ProjectManager } from "./ProjectManager";
 import "./workspace.css";
 
 interface PipelineSummary {
@@ -17,6 +18,8 @@ interface PipelineSummary {
 interface ProjectOption {
   id: string;
   name: string;
+  path: string;
+  createdAt: number;
 }
 
 interface ListResponse {
@@ -52,30 +55,33 @@ export default function WorkspacePage() {
   const [editValue, setEditValue] = useState("");
   const [registeredProjects, setRegisteredProjects] = useState<ProjectOption[]>([]);
 
-  useEffect(() => {
-    async function loadProjects() {
-      try {
-        const res = await fetch("/api/config/projects", { cache: "no-store" });
-        const json = await res.json();
-        if (json.success && json.data) {
-          setRegisteredProjects(
-            (json.data as Array<{ id: string; name: string }>).map((p) => ({
-              id: p.id,
-              name: p.name,
-            }))
-          );
-        }
-      } catch {
-        // non-critical
+  const loadProjects = useCallback(async () => {
+    try {
+      const res = await fetch("/api/config/projects", { cache: "no-store" });
+      const json = await res.json();
+      if (json.success && json.data) {
+        setRegisteredProjects(
+          (json.data as Array<{ id: string; name: string; path: string; createdAt: number }>).map((p) => ({
+            id: p.id,
+            name: p.name,
+            path: p.path,
+            createdAt: p.createdAt,
+          }))
+        );
       }
+    } catch {
+      // non-critical
     }
+  }, []);
+
+  useEffect(() => {
     void loadProjects();
 
     if (typeof BroadcastChannel === "undefined") return;
     const bc = new BroadcastChannel("config:projects");
     bc.onmessage = () => { void loadProjects(); };
     return () => bc.close();
-  }, []);
+  }, [loadProjects]);
 
   useEffect(() => {
     try {
@@ -183,7 +189,12 @@ export default function WorkspacePage() {
 
       <section className="ws-layout">
         <aside className="ws-sidebar">
-          <h2>Pipelines</h2>
+          <div className="ws-sidebar-head">
+            <h2>Pipelines</h2>
+            <div className="sidebar-project-actions">
+              <ProjectManager projects={registeredProjects} onProjectsChanged={loadProjects} />
+            </div>
+          </div>
           {pipelines.length === 0 ? (
             <div className="empty">No pipelines yet. Submit an idea above.</div>
           ) : (
