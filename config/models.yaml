@@ -71,12 +71,12 @@ models:
   oc-high:
     channel: router
     tier: premium
+    cost_hint: high
     strengths:
       - architecture
       - system-design
       - requirements
       - deep-reasoning
-    cost_hint: medium-high
     note: Maps to gemini-2.5-pro in gemini-cli config
   oc-medium:
     channel: router
