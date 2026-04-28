@@ -6,7 +6,8 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const createBody = z.object({
-  rawIdea: z.string().min(1).max(8000)
+  rawIdea: z.string().min(1).max(8000),
+  project: z.string().trim().min(1).max(80).optional()
 });
 
 export async function POST(req: Request) {
@@ -21,7 +22,7 @@ export async function POST(req: Request) {
     );
   }
   try {
-    const pipeline = await createPipeline(parsed.rawIdea);
+    const pipeline = await createPipeline(parsed.rawIdea, parsed.project);
     return NextResponse.json({ success: true, data: pipeline });
   } catch (err: unknown) {
     return NextResponse.json(

@@ -30,6 +30,7 @@ export type StageRecord = z.infer<typeof stageRecordSchema>;
 export const pipelineSchema = z.object({
   id: z.string().regex(/^pipe-\d+-[a-z0-9]+$/),
   rawIdea: z.string().min(1),
+  project: z.string().trim().min(1).max(80).optional(),
   currentStage: z.enum(STAGES),
   stages: z.object({
     idea: stageRecordSchema,
@@ -100,9 +101,13 @@ function newId(): string {
   return `pipe-${ts}-${rand}`;
 }
 
-export async function createPipeline(rawIdea: string): Promise<Pipeline> {
+export async function createPipeline(
+  rawIdea: string,
+  project?: string
+): Promise<Pipeline> {
   const idea = rawIdea.trim();
   if (!idea) throw new Error("rawIdea required");
+  const trimmedProject = project?.trim();
 
   await ensureDir();
   const now = Date.now();
@@ -112,6 +117,7 @@ export async function createPipeline(rawIdea: string): Promise<Pipeline> {
   const pipeline: Pipeline = {
     id: newId(),
     rawIdea: idea,
+    ...(trimmedProject ? { project: trimmedProject } : {}),
     currentStage: "idea",
     stages,
     createdAt: now,
@@ -166,7 +172,7 @@ export async function updateStage(
 
 export async function updatePipelineField(
   id: string,
-  patch: Partial<Pick<Pipeline, "batchId" | "dispatchPid">>
+  patch: Partial<Pick<Pipeline, "batchId" | "dispatchPid" | "project">>
 ): Promise<Pipeline> {
   return withLock(id, async () => {
     const current = await loadPipeline(id);

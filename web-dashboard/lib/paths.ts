@@ -35,3 +35,7 @@ export const PIPELINES_DIR =
 export const COST_LOG =
   process.env.ORCH_COST_LOG ||
   path.join(HOME, ".claude", "orchestration", "cost-tracking.jsonl");
+
+export const PROJECTS_JSON =
+  process.env.ORCH_PROJECTS_FILE ||
+  path.join(HOME, ".claude-orchestration", "projects.json");
