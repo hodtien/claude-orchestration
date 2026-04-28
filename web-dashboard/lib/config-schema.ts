@@ -4,7 +4,7 @@ export const modelEntrySchema = z
   .object({
     channel: z.enum(["router", "gemini_cli", "copilot_cli"]),
     tier: z.string().optional(),
-    cost_hint: z.enum(["very-high", "high", "medium", "medium-low", "low"]).optional(),
+    cost_hint: z.enum(["very-high", "high", "medium-high", "medium", "medium-low", "low"]).optional(),
     strengths: z.array(z.string()).optional(),
     note: z.string().optional()
   })

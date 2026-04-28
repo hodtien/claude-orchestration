@@ -29,7 +29,7 @@ const EMPTY_FORM: FormData = {
 
 const CHANNELS = ["router", "gemini_cli", "copilot_cli"];
 const TIERS = ["", "ultra", "premium", "fast", "cheap", "code-review"];
-const COST_HINTS = ["", "very-high", "high", "medium", "medium-low", "low"];
+const COST_HINTS = ["", "very-high", "high", "medium-high", "medium", "medium-low", "low"];
 
 function groupByChannel(models: ModelView[]): Map<string, ModelView[]> {
   const groups = new Map<string, ModelView[]>();
